@@ -1,40 +1,39 @@
-use soroban_sdk::{contracttype, Address, Vec};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 /// Represents a donor's consent record on-chain
 #[derive(Clone)]
 #[contracttype]
 pub struct ConsentRecord {
-    /// Hashed national ID (SHA-256)
-    pub donor_id_hash: Vec<u8>,
-    /// Wallet address of the donor
+    /// SHA-256 hex string of national ID
+    pub donor_id_hash: String,
+    /// Wallet address of the donor — only this wallet can revoke
     pub wallet: Address,
-    /// List of organs the donor consents to donate
+    /// List of organs the donor consents to donate (e.g., ["kidney", "liver"])
     pub organs: Vec<String>,
     /// Timestamp of registration (Unix seconds)
-    pub timestamp: u64,
+    pub registered_at: u64,
     /// Whether the consent is currently active
-    pub active: bool,
+    pub is_active: bool,
 }
 
-/// Enum for contract events
+/// Storage key for consent records
 #[derive(Clone)]
 #[contracttype]
-pub enum LifemarqEvent {
-    /// Emitted when a donor registers
-    DonorRegistered {
-        donor_id_hash: Vec<u8>,
-        wallet: Address,
-        timestamp: u64,
-    },
-    /// Emitted when a donor revokes consent
-    ConsentRevoked {
-        donor_id_hash: Vec<u8>,
-        wallet: Address,
-        timestamp: u64,
-    },
-    /// Emitted when a hospital queries consent
-    ConsentQueried {
-        donor_id_hash: Vec<u8>,
-        timestamp: u64,
-    },
+pub enum DataKey {
+    /// Keyed by donor_id_hash (SHA-256 hex string)
+    Consent(String),
+}
+
+/// Contract error types
+#[contracterror]
+#[derive(Copy, Clone)]
+pub enum ContractError {
+    /// Donor already registered with this hash
+    AlreadyRegistered = 1,
+    /// Consent record not found
+    NotFound = 2,
+    /// Caller is not authorized (not the original signer)
+    Unauthorized = 3,
+    /// Consent already revoked
+    AlreadyRevoked = 4,
 }

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import axios from "axios";
 
 interface ConsentResult {
-  active: boolean;
-  organs?: string[];
-  timestamp?: number;
+  id_hash: string;
+  consent_active: boolean;
+  organs: string[];
+  queried_at: string;
 }
 
 export default function HospitalQuery() {
@@ -17,6 +17,7 @@ export default function HospitalQuery() {
   const [messageType, setMessageType] = useState<"success" | "error" | "info">(
     "info",
   );
+  const [hasQueried, setHasQueried] = useState(false);
 
   const handleQuery = async () => {
     if (!patientIdHash.trim()) {
@@ -25,31 +26,57 @@ export default function HospitalQuery() {
       return;
     }
 
+    // Validate hash format (64-char hex)
+    if (patientIdHash.length !== 64 || !/^[a-f0-9]{64}$/i.test(patientIdHash)) {
+      setMessage(
+        "Invalid hash format. Must be 64-character hexadecimal (SHA-256).",
+      );
+      setMessageType("error");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
     setResult(null);
+    setHasQueried(true);
 
     try {
       // Query the hospital API
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/consent/${patientIdHash}`,
-      );
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const response = await fetch(`${apiUrl}/consent/${patientIdHash}`);
 
-      setResult(response.data);
-      setMessage("Consent record retrieved successfully");
-      setMessageType("success");
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        setMessage("No consent record found for this patient");
-        setMessageType("info");
-        setResult({ active: false });
-      } else {
-        setMessage("Error querying consent record");
-        setMessageType("error");
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
+
+      const data: ConsentResult = await response.json();
+      setResult(data);
+
+      if (data.consent_active) {
+        setMessage("Consent record found");
+        setMessageType("success");
+      } else {
+        setMessage("No active consent record found for this patient");
+        setMessageType("info");
+      }
+    } catch (error: any) {
+      setMessage(
+        error.message?.includes("API error")
+          ? "Unable to reach the registry. Please try again."
+          : "Error querying consent record",
+      );
+      setMessageType("error");
+      setResult(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClear = () => {
+    setPatientIdHash("");
+    setResult(null);
+    setMessage("");
+    setHasQueried(false);
   };
 
   return (
@@ -67,67 +94,143 @@ export default function HospitalQuery() {
           <input
             id="patientIdHash"
             type="text"
-            placeholder="Enter hashed patient ID"
+            placeholder="Enter hashed patient ID (64-char hex)"
             value={patientIdHash}
-            onChange={(e) => setPatientIdHash(e.target.value)}
+            onChange={(e) => setPatientIdHash(e.target.value.toLowerCase())}
             disabled={loading}
           />
+          <p style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
+            Enter the SHA-256 hash of the patient's national ID
+          </p>
         </div>
 
-        <button onClick={handleQuery} disabled={loading}>
-          {loading ? "Querying..." : "Query Consent Status"}
-        </button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button onClick={handleQuery} disabled={loading} style={{ flex: 1 }}>
+            {loading ? "Querying..." : "Query Consent Status"}
+          </button>
+          {hasQueried && (
+            <button
+              onClick={handleClear}
+              disabled={loading}
+              style={{ backgroundColor: "#6c757d" }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {result && (
         <div className="card">
           <h3>Consent Status</h3>
-          <div
-            style={{
-              padding: "20px",
-              backgroundColor: result.active ? "#d4edda" : "#f8d7da",
-              borderRadius: "4px",
-            }}
-          >
-            <p
+
+          {result.consent_active ? (
+            <div
               style={{
-                fontSize: "18px",
-                fontWeight: "bold",
-                marginBottom: "10px",
+                padding: "20px",
+                backgroundColor: "#d4edda",
+                borderRadius: "4px",
+                borderLeft: "4px solid #28a745",
               }}
             >
-              {result.active ? "✓ Consent Active" : "✗ No Active Consent"}
-            </p>
-            {result.active && result.organs && (
-              <div>
-                <p style={{ marginBottom: "10px" }}>
+              <p
+                style={{
+                  fontSize: "18px",
+                  fontWeight: "bold",
+                  marginBottom: "15px",
+                  color: "#155724",
+                }}
+              >
+                ✓ Consent Active
+              </p>
+
+              <div style={{ marginBottom: "15px" }}>
+                <p style={{ marginBottom: "10px", fontWeight: "500" }}>
                   Organs registered for donation:
                 </p>
-                <ul style={{ marginLeft: "20px" }}>
+                <ul
+                  style={{
+                    marginLeft: "20px",
+                    color: "#155724",
+                  }}
+                >
                   {result.organs.map((organ) => (
-                    <li key={organ}>{organ}</li>
+                    <li key={organ}>
+                      {organ.charAt(0).toUpperCase() + organ.slice(1)}
+                    </li>
                   ))}
                 </ul>
               </div>
-            )}
-            {result.timestamp && (
-              <p style={{ marginTop: "10px", fontSize: "12px", color: "#666" }}>
-                Registered: {new Date(result.timestamp * 1000).toLocaleString()}
+
+              <p style={{ fontSize: "12px", color: "#155724" }}>
+                This consent is immutable and protected by the Stellar
+                blockchain. Family members cannot override this decision.
               </p>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "20px",
+                backgroundColor: "#e2e3e5",
+                borderRadius: "4px",
+                borderLeft: "4px solid #6c757d",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: "18px",
+                  fontWeight: "bold",
+                  marginBottom: "10px",
+                  color: "#383d41",
+                }}
+              >
+                No Active Consent Found
+              </p>
+
+              <p style={{ color: "#383d41", marginBottom: "10px" }}>
+                This patient does not have an active organ donation consent
+                registered in the system.
+              </p>
+
+              <p style={{ fontSize: "12px", color: "#383d41" }}>
+                This does not mean the patient is not a donor — they may have
+                registered through another system or have not yet registered.
+              </p>
+            </div>
+          )}
+
+          <p
+            style={{
+              marginTop: "15px",
+              fontSize: "12px",
+              color: "#666",
+            }}
+          >
+            Queried: {new Date(result.queried_at).toLocaleString()}
+          </p>
         </div>
       )}
+
+      <div className="card">
+        <h3>How to Use</h3>
+        <ol style={{ marginLeft: "20px", lineHeight: "1.8" }}>
+          <li>Obtain the patient's national ID</li>
+          <li>Hash it using SHA-256 to get a 64-character hex string</li>
+          <li>Enter the hash above and click "Query Consent Status"</li>
+          <li>The system will return the patient's consent status instantly</li>
+        </ol>
+      </div>
 
       <div className="card">
         <h3>Important Notes</h3>
         <ul style={{ marginLeft: "20px", lineHeight: "1.8" }}>
           <li>This query is read-only and does not require authentication</li>
-          <li>All queries are logged for audit purposes</li>
+          <li>All queries are logged for audit and compliance purposes</li>
           <li>
             Consent status is verified directly from the Stellar blockchain
           </li>
           <li>Family members cannot override a registered decision</li>
+          <li>Results are returned in real-time</li>
         </ul>
       </div>
     </div>
