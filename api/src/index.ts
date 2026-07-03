@@ -8,6 +8,10 @@ import {
   ConsentNotFoundError,
   ConsentValidationError,
 } from "./consent-service";
+import {
+  confirmationTracker,
+  ConfirmationStatus,
+} from "./confirmation-tracker";
 
 dotenv.config();
 
@@ -180,6 +184,166 @@ app.get("/audit/queries", (req: Request, res: Response) => {
 });
 
 /**
+ * POST /submission/:tx_hash
+ * Record a transaction submission (for frontend integration)
+ *
+ * Called when frontend submits a register/revoke transaction to Stellar
+ * Enables backend to track confirmation status
+ *
+ * Status Codes:
+ * - 200: Submission recorded
+ * - 400: Invalid parameters
+ */
+app.post("/submission/:tx_hash", (req: Request, res: Response) => {
+  try {
+    const { tx_hash } = req.params;
+    const { consentHash, wallet, operation } = req.body;
+
+    // Validate required fields
+    if (!tx_hash || !consentHash || !wallet || !operation) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (!["register", "revoke"].includes(operation)) {
+      return res.status(400).json({ error: "Invalid operation" });
+    }
+
+    // Record submission in tracker
+    confirmationTracker.recordSubmission(
+      tx_hash,
+      consentHash,
+      wallet,
+      operation as "register" | "revoke",
+    );
+
+    res.json({
+      status: "recorded",
+      txHash: tx_hash,
+      consentHash,
+      operation,
+    });
+  } catch (error: any) {
+    console.error("Error recording submission:", error);
+    res.status(500).json({ error: "Failed to record submission" });
+  }
+});
+
+/**
+ * GET /submission/:tx_hash
+ * Get transaction confirmation status
+ *
+ * Allows frontend to poll confirmation status of submitted transaction
+ *
+ * Status Codes:
+ * - 200: Confirmation status retrieved
+ * - 404: Transaction not found
+ */
+app.get("/submission/:tx_hash", (req: Request, res: Response) => {
+  try {
+    const { tx_hash } = req.params;
+
+    const confirmation = confirmationTracker.getStatus(tx_hash);
+    const submission = confirmationTracker.getSubmission(tx_hash);
+
+    if (!confirmation) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    res.json({
+      txHash: tx_hash,
+      status: confirmation.status,
+      operation: submission?.operation,
+      consentHash: submission?.consentHash,
+      wallet: submission?.wallet,
+      submittedAt: submission?.submittedAt,
+      confirmationTime: confirmation.confirmationTime,
+      ledgerHeight: confirmation.ledgerHeight,
+      consentActiveOnChain: confirmation.consentActiveOnChain,
+    });
+  } catch (error: any) {
+    console.error("Error fetching submission status:", error);
+    res.status(500).json({ error: "Failed to fetch submission status" });
+  }
+});
+
+/**
+ * GET /submission/:tx_hash/confirm
+ * Poll and update transaction confirmation status
+ *
+ * Backend call to check Stellar for transaction confirmation
+ * Updates the tracker with current status
+ *
+ * Status Codes:
+ * - 200: Status updated
+ * - 404: Transaction not found
+ */
+app.get("/submission/:tx_hash/confirm", async (req: Request, res: Response) => {
+  try {
+    const { tx_hash } = req.params;
+
+    const submission = confirmationTracker.getSubmission(tx_hash);
+    if (!submission) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    // Query contract to check current consent state
+    const consentActive = await consentService.queryConsent({
+      idHash: submission.consentHash,
+    });
+
+    // Update confirmation status based on current state
+    // In production, would also check Horizon for actual tx confirmation
+    const expectedActive = submission.operation === "register" ? true : false;
+    const isConfirmed = consentActive === expectedActive;
+
+    confirmationTracker.updateStatus(
+      tx_hash,
+      isConfirmed ? ConfirmationStatus.CONFIRMED : ConfirmationStatus.PENDING,
+      consentActive,
+    );
+
+    const confirmation = confirmationTracker.getStatus(tx_hash);
+
+    res.json({
+      txHash: tx_hash,
+      status: confirmation?.status,
+      consentActiveOnChain: consentActive,
+      expectedAfterOperation: expectedActive,
+      confirmationTime: confirmation?.confirmationTime,
+    });
+  } catch (error: any) {
+    console.error("Error confirming submission:", error);
+    res.status(500).json({ error: "Failed to confirm submission" });
+  }
+});
+
+/**
+ * GET /stats/submissions
+ * Get submission tracker statistics
+ *
+ * Returns counts of pending, confirmed, and failed submissions
+ *
+ * Status Codes:
+ * - 200: Statistics retrieved
+ */
+app.get("/stats/submissions", (req: Request, res: Response) => {
+  try {
+    const stats = confirmationTracker.getStats();
+
+    res.json({
+      totalSubmissions: stats.totalSubmissions,
+      pending: stats.pendingCount,
+      confirmed: stats.confirmedCount,
+      failed: stats.failedCount,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error fetching stats:", error);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+/**
  * Error handling middleware
  */
 app.use((err: any, req: Request, res: Response) => {
@@ -204,4 +368,8 @@ app.listen(port, () => {
   console.log(`  GET /consent/:id_hash`);
   console.log(`  GET /consent/:id_hash/full`);
   console.log(`  GET /audit/queries`);
+  console.log(`  POST /submission/:tx_hash (record submission)`);
+  console.log(`  GET /submission/:tx_hash (get status)`);
+  console.log(`  GET /submission/:tx_hash/confirm (poll status)`);
+  console.log(`  GET /stats/submissions (tracker statistics)`);
 });
