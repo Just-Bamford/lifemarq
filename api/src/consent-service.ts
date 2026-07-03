@@ -1,4 +1,9 @@
 import { StellarClient, ConsentRecord } from "./stellar-client";
+import {
+  validateConsentHash,
+  ConsentHashError,
+  parseHashInput,
+} from "./hash-utils";
 
 /**
  * Donor Consent Service Layer
@@ -198,12 +203,18 @@ export class ConsentService {
    *
    * SHA-256 hex string must be exactly 64 characters
    * Contains only hex digits (0-9, a-f, A-F)
+   *
+   * Uses hash-utils for consistent validation across codebase
    */
   private validateHash(hash: string): void {
-    if (!hash || hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(hash)) {
-      throw new ConsentValidationError(
-        `Invalid ID hash format. Expected 64-character hex string, got: ${hash?.length || 0} chars`,
-      );
+    try {
+      validateConsentHash(hash);
+    } catch (error: any) {
+      if (error instanceof ConsentHashError) {
+        throw new ConsentValidationError(error.message);
+      }
+
+      throw error;
     }
   }
 }
