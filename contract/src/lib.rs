@@ -8,6 +8,50 @@ mod registry;
 use types::{ConsentRecord, ContractError};
 use registry::Registry;
 
+/// Lifemarq Soroban Smart Contract
+/// 
+/// Immutable donor consent registry on the Stellar blockchain.
+/// 
+/// # Event Hooks
+/// 
+/// All consent state transitions emit auditable events that enable backend observability.
+/// Hospital systems and analytics can subscribe to these events for real-time updates.
+/// 
+/// ## Event Topics
+/// 
+/// ### `lifemarq.register`
+/// Emitted when a new donor consent is registered
+/// - **Topics**: (lifemarq, register)
+/// - **Data**: (donor_id_hash: String, wallet: Address, timestamp: u64)
+/// - **Ledger**: Immutable record on-chain
+/// - **Use Case**: Analytics, audit trail, hospital notification of new registrations
+/// 
+/// ### `lifemarq.revoke`
+/// Emitted when a donor revokes their consent
+/// - **Topics**: (lifemarq, revoke)
+/// - **Data**: (donor_id_hash: String, wallet: Address, timestamp: u64)
+/// - **Ledger**: Updates existing record to is_active=false
+/// - **Use Case**: Analytics, hospital notification of revoked consent, compliance audit
+/// 
+/// # State Machine
+/// 
+/// ```
+///         register(wallet_auth)
+///    ┌──────────────────────────┐
+///    │                          ▼
+/// (new) ─────────────────────► ACTIVE ◄─── consent_active=true
+///                                 │
+///                                 │ revoke(wallet_auth)
+///                                 ▼
+///                              REVOKED ◄─── consent_active=false (permanent)
+/// ```
+/// 
+/// # Security Model
+/// 
+/// - **Authentication**: All mutating operations (register, revoke) require wallet.require_auth()
+/// - **Authorization**: Only the original wallet can revoke a consent
+/// - **Immutability**: Once revoked, consent cannot be re-activated
+/// - **Transparency**: All transitions emit events for audit trail
 #[contract]
 pub struct LifemarqContract;
 
@@ -15,15 +59,21 @@ pub struct LifemarqContract;
 impl LifemarqContract {
     /// Register a donor's consent on-chain
     /// 
+    /// **Event**: Emits `lifemarq.register` event
+    /// 
     /// # Arguments
     /// * `env` - Soroban environment
-    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string)
-    /// * `wallet` - Donor's Stellar wallet address
+    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
+    /// * `wallet` - Donor's Stellar wallet address (must sign this call)
     /// * `organs` - List of organs to donate (e.g., ["kidney", "liver"])
     /// 
     /// # Returns
     /// * `Ok(())` if registration successful
-    /// * `Err(ContractError)` if already registered or other error
+    /// * `Err(AlreadyRegistered)` if already registered with this hash
+    /// * `Err(Unauthorized)` if wallet did not authenticate
+    /// 
+    /// # State Transition
+    /// (new) → ACTIVE
     pub fn register(
         env: Env,
         donor_id_hash: String,
@@ -35,14 +85,21 @@ impl LifemarqContract {
 
     /// Revoke a donor's consent (only the original signer can call this)
     /// 
+    /// **Event**: Emits `lifemarq.revoke` event
+    /// 
     /// # Arguments
     /// * `env` - Soroban environment
-    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string)
-    /// * `wallet` - Donor's Stellar wallet address
+    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
+    /// * `wallet` - Donor's Stellar wallet address (must match original registrant)
     /// 
     /// # Returns
     /// * `Ok(())` if revocation successful
-    /// * `Err(ContractError)` if not found, already revoked, or unauthorized
+    /// * `Err(NotFound)` if consent record doesn't exist
+    /// * `Err(AlreadyRevoked)` if consent already revoked (immutable state)
+    /// * `Err(Unauthorized)` if wallet doesn't match original registrant
+    /// 
+    /// # State Transition
+    /// ACTIVE → REVOKED (irreversible, permanent)
     pub fn revoke(
         env: Env,
         donor_id_hash: String,
@@ -53,26 +110,34 @@ impl LifemarqContract {
 
     /// Query a donor's consent status (read-only, no auth required)
     /// 
+    /// **No Event Emitted** (read-only query)
+    /// 
     /// # Arguments
     /// * `env` - Soroban environment
-    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string)
+    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
     /// 
     /// # Returns
     /// * `true` if consent exists and is active
     /// * `false` if not found or revoked
+    /// 
+    /// Hospital systems use this to verify consent before transplant procedures
     pub fn query(env: Env, donor_id_hash: String) -> bool {
         Registry::query(&env, donor_id_hash)
     }
 
     /// Get full consent record (read-only, no auth required)
     /// 
+    /// **No Event Emitted** (read-only query)
+    /// 
     /// # Arguments
     /// * `env` - Soroban environment
-    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string)
+    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
     /// 
     /// # Returns
-    /// * `Some(ConsentRecord)` if found
+    /// * `Some(ConsentRecord)` with full details: wallet, organs, timestamp, status
     /// * `None` if not found
+    /// 
+    /// Includes registration timestamp and organ list for detailed consent verification
     pub fn get_record(env: Env, donor_id_hash: String) -> Option<ConsentRecord> {
         Registry::get_record(&env, donor_id_hash)
     }
