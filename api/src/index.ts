@@ -1,7 +1,13 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { StellarClient, ConsentRecord } from "./stellar-client";
+import { StellarClient } from "./stellar-client";
+import {
+  ConsentService,
+  ConsentServiceError,
+  ConsentNotFoundError,
+  ConsentValidationError,
+} from "./consent-service";
 
 dotenv.config();
 
@@ -12,7 +18,7 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Stellar client
+// Initialize Stellar client and consent service
 const contractId = process.env.CONTRACT_ID || "";
 const network = process.env.NETWORK || "testnet";
 
@@ -22,22 +28,13 @@ if (!contractId) {
 }
 
 const stellarClient = new StellarClient(contractId, network);
-
-// In-memory audit log
-interface AuditEntry {
-  id_hash: string;
-  queried_at: string;
-  result: {
-    consent_active: boolean;
-    organs: string[];
-  };
-}
-
-const auditLog: AuditEntry[] = [];
+const consentService = new ConsentService(stellarClient);
 
 /**
  * GET /health
  * Health check endpoint
+ *
+ * Returns operational status, network, and contract ID
  */
 app.get("/health", (req: Request, res: Response) => {
   res.json({
@@ -51,55 +48,45 @@ app.get("/health", (req: Request, res: Response) => {
 /**
  * GET /consent/:id_hash
  * Query a donor's consent status
+ *
+ * Public endpoint - no authentication required
  * Returns consent status and organs if active
+ *
+ * Status Codes:
+ * - 200: Record found (consent_active: true or false)
+ * - 400: Invalid hash format
+ * - 503: Registry unavailable (Stellar network error)
  */
 app.get("/consent/:id_hash", async (req: Request, res: Response) => {
   try {
     const { id_hash } = req.params;
 
-    // Validate hash format (SHA-256 hex = 64 chars)
-    if (!id_hash || id_hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(id_hash)) {
+    // Use service layer to query consent
+    const result = await consentService.queryConsent({
+      idHash: id_hash,
+    });
+
+    // Always return 200 (not 404) - ambiguous whether record not found or system error
+    res.json({
+      id_hash: result.idHash,
+      consent_active: result.isConsented,
+      organs: result.organs,
+      queried_at: result.queriedAt,
+    });
+  } catch (error: any) {
+    // Service layer error handling
+    if (error instanceof ConsentValidationError) {
       return res.status(400).json({
         error: "Invalid ID hash format (must be 64-char hex SHA-256)",
       });
     }
 
-    // Query the contract
-    const record = await stellarClient.getRecord(id_hash);
-
-    const consentActive = record !== null && record.isActive;
-    const organs = record?.organs || [];
-
-    // Log to audit trail
-    auditLog.push({
-      id_hash,
-      queried_at: new Date().toISOString(),
-      result: {
-        consent_active: consentActive,
-        organs,
-      },
-    });
-
-    // Return 200 regardless of consent status
-    // A 404 would be ambiguous (could mean record not found or system error)
-    res.json({
-      id_hash,
-      consent_active: consentActive,
-      organs,
-      queried_at: new Date().toISOString(),
-    });
-  } catch (error: any) {
-    console.error("Error querying consent:", error);
-
-    // If Soroban RPC is unavailable, return 503
-    if (
-      error.message?.includes("network") ||
-      error.message?.includes("timeout") ||
-      error.message?.includes("ECONNREFUSED")
-    ) {
+    if (error instanceof ConsentServiceError) {
+      console.error("Consent service error:", error.message);
       return res.status(503).json({ error: "registry_unavailable" });
     }
 
+    console.error("Unexpected error in /consent endpoint:", error);
     res.status(503).json({ error: "registry_unavailable" });
   }
 });
@@ -107,7 +94,16 @@ app.get("/consent/:id_hash", async (req: Request, res: Response) => {
 /**
  * GET /consent/:id_hash/full
  * Get full consent record (for authorized queries)
+ *
  * Requires X-API-Key header (optional for MVP)
+ * Returns complete record: wallet, organs, registration timestamp, status
+ *
+ * Status Codes:
+ * - 200: Record found
+ * - 400: Invalid hash format
+ * - 401: API key invalid or missing (if ENABLE_PROVIDER_AUTH=true)
+ * - 404: Record not found
+ * - 503: Registry unavailable
  */
 app.get("/consent/:id_hash/full", async (req: Request, res: Response) => {
   try {
@@ -115,24 +111,14 @@ app.get("/consent/:id_hash/full", async (req: Request, res: Response) => {
     const apiKey = req.headers["x-api-key"];
 
     // TODO: Implement API key validation for hospital providers
-    // For now, API key is optional
     if (process.env.ENABLE_PROVIDER_AUTH === "true" && !apiKey) {
       return res.status(401).json({ error: "API key required" });
     }
 
-    // Validate hash format
-    if (!id_hash || id_hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(id_hash)) {
-      return res.status(400).json({
-        error: "Invalid ID hash format (must be 64-char hex SHA-256)",
-      });
-    }
-
-    // Query the contract
-    const result = await stellarClient.getRecord(id_hash);
-
-    if (!result) {
-      return res.status(404).json({ error: "Consent record not found" });
-    }
+    // Use service layer to get record
+    const result = await consentService.getConsentRecord({
+      idHash: id_hash,
+    });
 
     res.json({
       donor_id_hash: result.donorIdHash,
@@ -142,16 +128,26 @@ app.get("/consent/:id_hash/full", async (req: Request, res: Response) => {
       is_active: result.isActive,
     });
   } catch (error: any) {
-    console.error("Error fetching full record:", error);
+    // Service layer error handling
+    if (error instanceof ConsentValidationError) {
+      return res.status(400).json({
+        error: "Invalid ID hash format (must be 64-char hex SHA-256)",
+      });
+    }
 
-    if (
-      error.message?.includes("network") ||
-      error.message?.includes("timeout") ||
-      error.message?.includes("ECONNREFUSED")
-    ) {
+    if (error instanceof ConsentNotFoundError) {
+      return res.status(404).json({ error: "Consent record not found" });
+    }
+
+    if (error instanceof ConsentServiceError) {
+      console.error("Consent service error:", error.message);
       return res.status(503).json({ error: "registry_unavailable" });
     }
 
+    console.error(
+      "Unexpected error in /consent/:id_hash/full endpoint:",
+      error,
+    );
     res.status(503).json({ error: "registry_unavailable" });
   }
 });
@@ -159,19 +155,23 @@ app.get("/consent/:id_hash/full", async (req: Request, res: Response) => {
 /**
  * GET /audit/queries
  * Retrieve audit log of all queries
+ *
  * Returns array of query entries with timestamp and result
+ * Optional limit parameter to control response size (max 1000)
+ *
+ * Status Codes:
+ * - 200: Audit log retrieved
+ * - 500: Internal error (unlikely)
  */
 app.get("/audit/queries", (req: Request, res: Response) => {
   try {
-    // Optional: limit parameter
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
-
-    const recentQueries = auditLog.slice(-limit);
+    const queries = consentService.getAuditLog(limit);
 
     res.json({
-      total: auditLog.length,
-      returned: recentQueries.length,
-      queries: recentQueries,
+      total: consentService.getFullAuditLog().length,
+      returned: queries.length,
+      queries,
     });
   } catch (error: any) {
     console.error("Error fetching audit log:", error);
