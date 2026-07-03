@@ -420,6 +420,9 @@ app.post(
         id_hash,
         hospitalId,
         procedureType,
+        (req as any).id, // correlation ID
+        (req as any).ip, // source IP
+        req.get("user-agent"), // user agent
       );
 
       // Return verification result (always 200, status field indicates result)
@@ -482,6 +485,81 @@ app.get("/verify/stats", (req: Request, res: Response) => {
 });
 
 /**
+ * GET /audit/verifications
+ * Get verification audit log
+ *
+ * Admin/compliance endpoint for reviewing all verifications
+ * Requires ADMIN role or hospital access to own records
+ *
+ * Query parameters:
+ * - limit: max records to return (default: 100, max: 1000)
+ * - hospitalId: filter by hospital (optional)
+ * - startDate: filter by date range (optional, ISO 8601)
+ * - endDate: filter by date range (optional, ISO 8601)
+ * - format: export format (optional: csv, json - default: json)
+ *
+ * Status Codes:
+ * - 200: Audit log retrieved
+ * - 401: Not authenticated
+ * - 403: Insufficient permissions
+ */
+app.get(
+  "/audit/verifications",
+  requirePermission("view_audit_logs"),
+  (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+      const hospitalId = req.query.hospitalId as string | undefined;
+      const format = (req.query.format as string) || "json";
+
+      // Hospital can only view own audit log
+      if (
+        user.role === Role.HOSPITAL &&
+        !rbacService.authorizeHospitalAccess(user, hospitalId || "")
+      ) {
+        return res.status(403).json({
+          error: "Forbidden: Can only access own hospital's audit log",
+        });
+      }
+
+      let auditEntries;
+
+      if (hospitalId) {
+        auditEntries = verificationService.getAuditLogByHospital(
+          hospitalId,
+          limit,
+        );
+      } else {
+        auditEntries = verificationService.getAuditLog(limit);
+      }
+
+      // Export as CSV if requested
+      if (format === "csv") {
+        const csv = verificationService.exportAuditLogAsCSV();
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="verification-audit-${Date.now()}.csv"`,
+        );
+        return res.send(csv);
+      }
+
+      // Return as JSON (default)
+      res.json({
+        count: auditEntries.length,
+        total: auditEntries.length,
+        entries: auditEntries,
+        exportedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Error fetching audit log:", error);
+      res.status(500).json({ error: "Failed to fetch audit log" });
+    }
+  },
+);
+
+/**
  * 404 handler
  */
 app.use((req: Request, res: Response) => {
@@ -504,4 +582,5 @@ app.listen(port, () => {
   console.log(`  GET /stats/submissions (tracker statistics)`);
   console.log(`  POST /verify-donor/:id_hash (hospital verification)`);
   console.log(`  GET /verify/stats (verification statistics)`);
+  console.log(`  GET /audit/verifications (audit log - admin only)`);
 });
