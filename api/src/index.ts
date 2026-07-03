@@ -13,6 +13,12 @@ import {
   ConfirmationStatus,
 } from "./confirmation-tracker";
 import { VerificationService } from "./verification-service";
+import {
+  rbacMiddleware,
+  requirePermission,
+  rbacService,
+  Role,
+} from "./rbac-service";
 
 dotenv.config();
 
@@ -22,6 +28,7 @@ const port = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(rbacMiddleware); // Apply RBAC authentication
 
 // Initialize Stellar client and consent service
 const contractId = process.env.CONTRACT_ID || "";
@@ -375,66 +382,81 @@ app.get("/stats/submissions", (req: Request, res: Response) => {
  * - 401: Hospital not authorized
  * - 503: Registry unavailable
  */
-app.post("/verify-donor/:id_hash", async (req: Request, res: Response) => {
-  try {
-    const { id_hash } = req.params;
-    const { hospitalId, procedureType } = req.body;
+app.post(
+  "/verify-donor/:id_hash",
+  requirePermission("verify_donor"),
+  async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      const { id_hash } = req.params;
+      const { hospitalId, procedureType } = req.body;
 
-    // Validate required fields
-    if (!id_hash || !hospitalId) {
-      return res.status(400).json({
-        error: "Missing required fields: id_hash and hospitalId",
-      });
-    }
+      // Validate hospital can access this endpoint
+      if (
+        user.role === Role.HOSPITAL &&
+        !rbacService.authorizeHospitalAccess(user, hospitalId)
+      ) {
+        return res.status(403).json({
+          error: "Forbidden: Hospital can only verify with own hospitalId",
+        });
+      }
 
-    // Validate hash format
-    if (id_hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(id_hash)) {
-      return res.status(400).json({
-        error: "Invalid ID hash format (must be 64-char hex SHA-256)",
-      });
-    }
+      // Validate required fields
+      if (!id_hash || !hospitalId) {
+        return res.status(400).json({
+          error: "Missing required fields: id_hash and hospitalId",
+        });
+      }
 
-    // Verify consent and get response
-    const verificationResponse = await verificationService.verifyDonor(
-      id_hash,
-      hospitalId,
-      procedureType,
-    );
+      // Validate hash format
+      if (id_hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(id_hash)) {
+        return res.status(400).json({
+          error: "Invalid ID hash format (must be 64-char hex SHA-256)",
+        });
+      }
 
-    // Return verification result (always 200, status field indicates result)
-    res.json(verificationResponse);
-  } catch (error: any) {
-    console.error("Error verifying donor:", error);
+      // Verify consent and get response
+      const verificationResponse = await verificationService.verifyDonor(
+        id_hash,
+        hospitalId,
+        procedureType,
+      );
 
-    if (error instanceof ConsentValidationError) {
-      return res.status(400).json({
-        error: "Invalid request format",
-      });
-    }
+      // Return verification result (always 200, status field indicates result)
+      res.json(verificationResponse);
+    } catch (error: any) {
+      console.error("Error verifying donor:", error);
 
-    if (error instanceof ConsentServiceError) {
-      return res.status(503).json({
+      if (error instanceof ConsentValidationError) {
+        return res.status(400).json({
+          error: "Invalid request format",
+        });
+      }
+
+      if (error instanceof ConsentServiceError) {
+        return res.status(503).json({
+          status: "error",
+          donorIdHash: req.params.id_hash,
+          consentActive: false,
+          organs: [],
+          verifiedAt: new Date().toISOString(),
+          procedureAllowed: false,
+          message: "Registry unavailable. Cannot verify consent.",
+        });
+      }
+
+      res.status(503).json({
         status: "error",
         donorIdHash: req.params.id_hash,
         consentActive: false,
         organs: [],
         verifiedAt: new Date().toISOString(),
         procedureAllowed: false,
-        message: "Registry unavailable. Cannot verify consent.",
+        message: "Verification service error",
       });
     }
-
-    res.status(503).json({
-      status: "error",
-      donorIdHash: req.params.id_hash,
-      consentActive: false,
-      organs: [],
-      verifiedAt: new Date().toISOString(),
-      procedureAllowed: false,
-      message: "Verification service error",
-    });
-  }
-});
+  },
+);
 
 /**
  * GET /verify/stats
