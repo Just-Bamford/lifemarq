@@ -12,6 +12,7 @@ import {
   confirmationTracker,
   ConfirmationStatus,
 } from "./confirmation-tracker";
+import { VerificationService } from "./verification-service";
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ if (!contractId) {
 
 const stellarClient = new StellarClient(contractId, network);
 const consentService = new ConsentService(stellarClient);
+const verificationService = new VerificationService(consentService);
 
 /**
  * GET /health
@@ -344,11 +346,117 @@ app.get("/stats/submissions", (req: Request, res: Response) => {
 });
 
 /**
- * Error handling middleware
+ * POST /verify-donor/:id_hash
+ * Hospital verification endpoint
+ *
+ * Hospital systems submit a donor ID hash to verify consent before procedures.
+ * Returns verification status and organs list if consent is active.
+ *
+ * Body:
+ * {
+ *   "hospitalId": "hospital-001",
+ *   "procedureType": "kidney_transplant" (optional)
+ * }
+ *
+ * Response:
+ * {
+ *   "status": "verified|not_verified|error",
+ *   "donorIdHash": "a3f8d2...",
+ *   "consentActive": true,
+ *   "organs": ["kidney", "liver"],
+ *   "verifiedAt": "2025-09-14T10:23:00Z",
+ *   "procedureAllowed": true,
+ *   "message": "Donor consent verified for: kidney, liver..."
+ * }
+ *
+ * Status Codes:
+ * - 200: Verification completed (regardless of result)
+ * - 400: Invalid hash format or missing fields
+ * - 401: Hospital not authorized
+ * - 503: Registry unavailable
  */
-app.use((err: any, req: Request, res: Response) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error" });
+app.post("/verify-donor/:id_hash", async (req: Request, res: Response) => {
+  try {
+    const { id_hash } = req.params;
+    const { hospitalId, procedureType } = req.body;
+
+    // Validate required fields
+    if (!id_hash || !hospitalId) {
+      return res.status(400).json({
+        error: "Missing required fields: id_hash and hospitalId",
+      });
+    }
+
+    // Validate hash format
+    if (id_hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(id_hash)) {
+      return res.status(400).json({
+        error: "Invalid ID hash format (must be 64-char hex SHA-256)",
+      });
+    }
+
+    // Verify consent and get response
+    const verificationResponse = await verificationService.verifyDonor(
+      id_hash,
+      hospitalId,
+      procedureType,
+    );
+
+    // Return verification result (always 200, status field indicates result)
+    res.json(verificationResponse);
+  } catch (error: any) {
+    console.error("Error verifying donor:", error);
+
+    if (error instanceof ConsentValidationError) {
+      return res.status(400).json({
+        error: "Invalid request format",
+      });
+    }
+
+    if (error instanceof ConsentServiceError) {
+      return res.status(503).json({
+        status: "error",
+        donorIdHash: req.params.id_hash,
+        consentActive: false,
+        organs: [],
+        verifiedAt: new Date().toISOString(),
+        procedureAllowed: false,
+        message: "Registry unavailable. Cannot verify consent.",
+      });
+    }
+
+    res.status(503).json({
+      status: "error",
+      donorIdHash: req.params.id_hash,
+      consentActive: false,
+      organs: [],
+      verifiedAt: new Date().toISOString(),
+      procedureAllowed: false,
+      message: "Verification service error",
+    });
+  }
+});
+
+/**
+ * GET /verify/stats
+ * Get verification statistics
+ *
+ * Returns verification counts and metrics
+ *
+ * Status Codes:
+ * - 200: Statistics retrieved
+ */
+app.get("/verify/stats", (req: Request, res: Response) => {
+  try {
+    const stats = verificationService.getVerificationStats();
+
+    res.json({
+      ...stats,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error fetching verification stats:", error);
+    res.status(500).json({ error: "Failed to fetch statistics" });
+  }
 });
 
 /**
@@ -372,4 +480,6 @@ app.listen(port, () => {
   console.log(`  GET /submission/:tx_hash (get status)`);
   console.log(`  GET /submission/:tx_hash/confirm (poll status)`);
   console.log(`  GET /stats/submissions (tracker statistics)`);
+  console.log(`  POST /verify-donor/:id_hash (hospital verification)`);
+  console.log(`  GET /verify/stats (verification statistics)`);
 });
