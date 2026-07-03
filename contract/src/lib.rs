@@ -318,4 +318,146 @@ mod tests {
         let record = client.get_record(&unknown_hash);
         assert!(record.is_none());
     }
-}
+
+    #[test]
+    fn test_register_with_empty_organs_list() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let wallet = Address::random(&env);
+        let donor_id_hash = String::from_slice(&env, "b4f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7");
+        let organs = vec![&env]; // Empty organs list
+
+        let result = client.register(&donor_id_hash, &wallet, &organs);
+        assert!(result.is_ok());
+
+        // Verify record was created with empty organs
+        let record = client.get_record(&donor_id_hash);
+        assert!(record.is_some());
+        let rec = record.unwrap();
+        assert_eq!(rec.organs.len(), 0);
+    }
+
+    #[test]
+    fn test_register_with_many_organs() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let wallet = Address::random(&env);
+        let donor_id_hash = String::from_slice(&env, "c5f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7");
+        let organs = vec![
+            &env,
+            String::from_slice(&env, "kidney"),
+            String::from_slice(&env, "liver"),
+            String::from_slice(&env, "heart"),
+            String::from_slice(&env, "lungs"),
+            String::from_slice(&env, "corneas"),
+            String::from_slice(&env, "pancreas"),
+        ];
+
+        let result = client.register(&donor_id_hash, &wallet, &organs);
+        assert!(result.is_ok());
+
+        // Verify all organs were stored
+        let record = client.get_record(&donor_id_hash);
+        assert!(record.is_some());
+        let rec = record.unwrap();
+        assert_eq!(rec.organs.len(), 6);
+    }
+
+    #[test]
+    fn test_revoke_sets_is_active_to_false() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let wallet = Address::random(&env);
+        let donor_id_hash = String::from_slice(&env, "d6f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7");
+        let organs = vec![&env, String::from_slice(&env, "kidney")];
+
+        // Register
+        let _ = client.register(&donor_id_hash, &wallet, &organs);
+        let record_before = client.get_record(&donor_id_hash);
+        assert!(record_before.is_some());
+        assert!(record_before.unwrap().is_active);
+
+        // Revoke
+        let _ = client.revoke(&donor_id_hash, &wallet);
+
+        // Verify is_active is false
+        let record_after = client.get_record(&donor_id_hash);
+        assert!(record_after.is_some());
+        assert!(!record_after.unwrap().is_active);
+
+        // Verify other fields unchanged
+        let rec = record_after.unwrap();
+        assert_eq!(rec.donor_id_hash, donor_id_hash);
+        assert_eq!(rec.wallet, wallet);
+        assert_eq!(rec.organs.len(), 1);
+    }
+
+    #[test]
+    fn test_query_returns_false_for_revoked_by_full_record() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let wallet = Address::random(&env);
+        let donor_id_hash = String::from_slice(&env, "e7f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7");
+        let organs = vec![&env, String::from_slice(&env, "liver")];
+
+        // Register
+        let _ = client.register(&donor_id_hash, &wallet, &organs);
+        assert!(client.query(&donor_id_hash));
+
+        // Revoke
+        let _ = client.revoke(&donor_id_hash, &wallet);
+
+        // Query should return false
+        assert!(!client.query(&donor_id_hash));
+
+        // Get_record should show is_active=false
+        let record = client.get_record(&donor_id_hash);
+        assert!(record.is_some());
+        assert!(!record.unwrap().is_active);
+    }
+
+    #[test]
+    fn test_register_timestamp_is_immutable() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let wallet = Address::random(&env);
+        let donor_id_hash = String::from_slice(&env, "f8f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7");
+        let organs = vec![&env, String::from_slice(&env, "kidney")];
+
+        // Register (captures timestamp)
+        let _ = client.register(&donor_id_hash, &wallet, &organs);
+        let record_after_register = client.get_record(&donor_id_hash).unwrap();
+        let timestamp_after_register = record_after_register.registered_at;
+
+        // Revoke should not change registered_at
+        let _ = client.revoke(&donor_id_hash, &wallet);
+        let record_after_revoke = client.get_record(&donor_id_hash).unwrap();
+        let timestamp_after_revoke = record_after_revoke.registered_at;
+
+        assert_eq!(timestamp_after_register, timestamp_after_revoke);
+    }
+
+    #[test]
+    fn test_revoke_not_found_returns_error() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let wallet = Address::random(&env);
+        let nonexistent_hash = String::from_slice(&env, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        // Revoke on nonexistent record should fail
+        let result = client.revoke(&nonexistent_hash, &wallet);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), ContractError::NotFound);
+    }
