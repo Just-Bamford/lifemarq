@@ -2,10 +2,14 @@
 name = "lifemarq-contract"
 version = "0.1.0"
 edition = "2021"
+authors = ["Lifemarq Contributors"]
+description = "Immutable organ donor registry on Stellar Soroban"
+license = "MIT"
+repository = "https://github.com/Just-Bamford/lifemarq"
 
 [dependencies]
-soroban-sdk = "21.0"
-soroban-sdk-macros = "21.0"
+soroban-sdk = "=21.0"
+soroban-sdk-macros = "=21.0"
 
 [lib]
 crate-type = ["cdylib"]
