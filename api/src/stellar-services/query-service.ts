@@ -7,6 +7,7 @@ import {
   xdr,
 } from "stellar-sdk";
 import { StellarNetworkConfig } from "./network-config";
+import { ResilienceService, DEFAULT_RETRY_CONFIG } from "./resilience-service";
 
 /**
  * Consent Record as returned from Soroban contract
@@ -35,6 +36,7 @@ export class QueryService {
   private networkConfig: StellarNetworkConfig;
   private horizonClient: Horizon.Server;
   private sorobanClient: SorobanRpc.Client;
+  private resilienceService: ResilienceService;
   private sourceAccount: Horizon.AccountResponse | null = null;
 
   constructor(contractId: string, networkConfig: StellarNetworkConfig) {
@@ -46,6 +48,9 @@ export class QueryService {
       allowHttp: false,
       serverURL: networkConfig.sorobanUrl,
     });
+
+    // Initialize resilience service with retry + circuit breaker
+    this.resilienceService = new ResilienceService(DEFAULT_RETRY_CONFIG);
   }
 
   /**
@@ -66,11 +71,26 @@ export class QueryService {
    *
    * Calls contract.get_record(donor_id_hash)
    * Simulates the transaction to retrieve the result
+   * Applies resilience pattern: retry + circuit breaker
    *
    * @param idHash - SHA-256 hash of donor ID
    * @returns Full ConsentRecord or null if not found
    */
   async getRecord(idHash: string): Promise<ConsentRecord | null> {
+    return this.resilienceService.executeWithRetry(
+      () => this.performGetRecord(idHash),
+      `get_record(${idHash})`,
+    );
+  }
+
+  /**
+   * Perform the actual get_record query (without resilience wrapper)
+   *
+   * Internal method called by getRecord() with retry logic applied
+   */
+  private async performGetRecord(
+    idHash: string,
+  ): Promise<ConsentRecord | null> {
     try {
       // Get source account for building transaction
       const sourceAccount = await this.getSourceAccount();
