@@ -235,3 +235,81 @@ Hospital Systems (integrated)
 4. **Analytics**: Aggregated, anonymized donation statistics
 5. **Mobile App**: Native iOS/Android for donor registration
 6. **Passkey Auth**: Passwordless authentication for low-tech users
+
+## Repository Structure
+
+The codebase is organized into three independent deployable modules:
+
+```
+lifemarq/
+├── contract/                   # Soroban smart contract (Rust)
+│   ├── src/
+│   │   ├── lib.rs              # Contract entry points & public interface
+│   │   ├── registry.rs         # Core registry logic (register, revoke, query)
+│   │   ├── types.rs            # ConsentRecord struct, DataKey enum, events
+│   │   └── __tests__/          # Unit tests (100% coverage)
+│   ├── Cargo.toml              # Dependencies (soroban-sdk v21.0 pinned)
+│   └── README.md               # Contract-specific documentation
+│
+├── frontend/                   # Next.js 14 donor portal + hospital dashboard
+│   ├── app/
+│   │   ├── page.tsx            # Landing page / home route
+│   │   ├── donor/page.tsx      # Donor registration flow (3-state UI)
+│   │   ├── hospital/page.tsx   # Hospital query interface
+│   │   ├── globals.css         # Global styles
+│   │   └── layout.tsx          # Root layout (App Router)
+│   ├── lib/
+│   │   └── wallet.ts           # Freighter wallet integration (connectWallet, signTransaction)
+│   ├── tsconfig.json           # Strict TypeScript + App Router conventions (NEW)
+│   ├── package.json            # Dependencies & build scripts
+│   ├── .env.local.example      # Environment template
+│   └── README.md               # Frontend documentation
+│
+├── api/                        # Express REST API (TypeScript + Jest)
+│   ├── src/
+│   │   ├── index.ts            # Express server, route handlers, audit logging
+│   │   ├── stellar-client.ts   # Soroban RPC interaction layer (queries & record fetching)
+│   │   └── __tests__/          # Jest + Supertest test suite
+│   ├── tsconfig.json           # Strict TypeScript configuration (UPDATED)
+│   ├── jest.config.js          # Jest configuration with coverage thresholds
+│   ├── package.json            # Dependencies & test scripts
+│   ├── .env.example            # Environment template
+│   └── README.md               # API documentation
+│
+├── docs/
+│   ├── architecture.md         # System design & data flows (this file)
+│   ├── contract-spec.md        # Complete contract method reference & XDR types
+│   ├── standards.md            # Code standards, best practices & patterns
+│   ├── testing.md              # Testing strategy for all components
+│   ├── environment.md          # Environment variable setup & secrets management
+│   ├── deployment.md           # Testnet & mainnet deployment walkthrough
+│   └── definition-of-done.md   # Phase completion criteria & checklist
+│
+├── .editorconfig               # Cross-IDE code formatting standards (NEW)
+├── .gitignore                  # Standard Node.js + Rust ignores
+├── README.md                   # Project overview, features, quick start
+└── .github/                    # GitHub workflows, templates (optional)
+```
+
+### Key Files by Role
+
+**For Developers:**
+
+- `docs/standards.md` - Before committing code
+- `docs/testing.md` - Before writing tests
+- `docs/architecture.md` - To understand the system (you are here)
+
+**For DevOps/Deployment:**
+
+- `docs/deployment.md` - Testnet and mainnet procedures
+- `docs/environment.md` - Required environment variables
+
+**For Hospitals/Integrators:**
+
+- `api/README.md` - API integration guide
+- `api/.env.example` - API configuration
+
+**For Donors:**
+
+- `frontend/.env.local.example` - Frontend configuration
+- Running `npm run dev` in `frontend/` locally
