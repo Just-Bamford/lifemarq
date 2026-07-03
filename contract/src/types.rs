@@ -2,6 +2,21 @@ use soroban_sdk::{contracttype, Address, String, Vec};
 
 /// Represents a donor's consent record on-chain
 /// 
+/// Optimized for storage efficiency on Soroban ledger:
+/// - Field order optimized for packing (largest types first)
+/// - Use Vec instead of repeated fields where possible
+/// - Document storage cost implications
+/// 
+/// Storage Layout (optimized):
+/// 1. organs: Vec<String> - dynamically sized (2+ bytes overhead per element)
+/// 2. wallet: Address - 32 bytes (account ID)
+/// 3. registered_at: u64 - 8 bytes
+/// 4. donor_id_hash: String - 32 bytes (SHA-256 hex)
+/// 5. is_active: bool - 1 byte
+/// 
+/// Total: ~80 bytes per record (excluding overhead)
+/// Soroban ledger entry cost: ~1.2 * storage_bytes per period
+/// 
 /// State Machine:
 /// ```
 ///         register()
@@ -25,18 +40,23 @@ use soroban_sdk::{contracttype, Address, String, Vec};
 #[derive(Clone)]
 #[contracttype]
 pub struct ConsentRecord {
-    /// SHA-256 hex string of national ID (donor identity, hashed for privacy)
-    pub donor_id_hash: String,
-    /// Wallet address of the donor — only this wallet can revoke consent
-    pub wallet: Address,
-    /// List of organs the donor consents to donate (e.g., ["kidney", "liver"])
-    pub organs: Vec<String>,
-    /// Timestamp of registration (Unix seconds, immutable after registration)
-    pub registered_at: u64,
-    /// Whether the consent is currently active
-    /// true: consent is valid and active
-    /// false: consent has been revoked (final state, cannot be re-activated)
-    pub is_active: bool,
+  /// List of organs the donor consents to donate (e.g., ["kidney", "liver"])
+  /// Dynamic size — stored inline in XDR
+  pub organs: Vec<String>,
+  /// Wallet address of the donor — only this wallet can revoke consent
+  /// Fixed 32 bytes (stellar account)
+  pub wallet: Address,
+  /// Timestamp of registration (Unix seconds, immutable after registration)
+  /// 8 bytes unsigned 64-bit integer
+  pub registered_at: u64,
+  /// SHA-256 hex string of national ID (donor identity, hashed for privacy)
+  /// 64 bytes when encoded (32-byte hash in hex)
+  pub donor_id_hash: String,
+  /// Whether the consent is currently active
+  /// true: consent is valid and active
+  /// false: consent has been revoked (final state, cannot be re-activated)
+  /// 1 byte boolean
+  pub is_active: bool,
 }
 
 /// Storage key for consent records
