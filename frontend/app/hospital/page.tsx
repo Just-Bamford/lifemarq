@@ -46,6 +46,9 @@ export default function HospitalQuery() {
       const response = await fetch(`${apiUrl}/consent/${patientIdHash}`);
 
       if (!response.ok) {
+        if (response.status === 503) {
+          throw new Error("Registry unavailable - Stellar network may be down");
+        }
         throw new Error(`API error: ${response.status}`);
       }
 
@@ -53,18 +56,17 @@ export default function HospitalQuery() {
       setResult(data);
 
       if (data.consent_active) {
-        setMessage("Consent record found");
+        setMessage(
+          `Consent verified: ${data.organs.length} organ(s) registered for donation`,
+        );
         setMessageType("success");
       } else {
         setMessage("No active consent record found for this patient");
         setMessageType("info");
       }
     } catch (error: any) {
-      setMessage(
-        error.message?.includes("API error")
-          ? "Unable to reach the registry. Please try again."
-          : "Error querying consent record",
-      );
+      console.error("Query error:", error);
+      setMessage(error.message || "Error querying consent record");
       setMessageType("error");
       setResult(null);
     } finally {
