@@ -1,34 +1,46 @@
 # Lifemarq Deployment Guide
 
+Production-ready deployment procedures for testnet and mainnet.
+
 ## Prerequisites
 
 - Rust toolchain (1.70+)
-- Soroban CLI
+- Soroban CLI (latest)
 - Node.js 18+
-- Stellar account with testnet XLM
+- Docker (for containerized deployment)
+- Stellar account with testnet/mainnet XLM
 - Freighter wallet (for testing)
+- GitHub account for CI/CD
 
-## Installation
+## Pre-Deployment Checklist
 
-### 1. Install Soroban CLI
+### Code Quality
 
-```bash
-cargo install soroban-cli
-```
+- [ ] All tests passing: `npm test` (API), `cargo test` (Contract)
+- [ ] No TypeScript errors: `npm run build` (Frontend)
+- [ ] No console warnings in browser
+- [ ] All environment variables configured
+- [ ] No hardcoded secrets in code
+- [ ] Documentation complete and accurate
 
-### 2. Install Rust WASM target
+### Security
 
-```bash
-rustup target add wasm32-unknown-unknown
-```
+- [ ] Contract code reviewed
+- [ ] API endpoints secured with RBAC
+- [ ] CORS properly configured for production domain
+- [ ] Rate limiting enabled on API
+- [ ] Sensitive data not logged (PII, private keys)
+- [ ] HTTPS enforced in production
+- [ ] API key rotation strategy documented
 
-### 3. Clone and setup project
+### Infrastructure
 
-```bash
-git clone <repo>
-cd lifemarq
-npm install
-```
+- [ ] Monitoring and alerting configured
+- [ ] Log aggregation set up
+- [ ] Backup strategy documented
+- [ ] Disaster recovery plan tested
+- [ ] Incident response procedures documented
+- [ ] Team trained on runbooks
 
 ## Testnet Deployment
 
@@ -39,186 +51,358 @@ cd contract
 cargo build --target wasm32-unknown-unknown --release
 ```
 
-Output: `target/wasm32-unknown-unknown/release/lifemarq_contract.wasm`
+**Output:** `target/wasm32-unknown-unknown/release/lifemarq_contract.wasm`
 
-### Step 2: Create Stellar Account
-
-If you don't have a testnet account:
+Verify the WASM file is created:
 
 ```bash
-soroban config identity generate --global testnet-account
+ls -lh target/wasm32-unknown-unknown/release/lifemarq_contract.wasm
+# -rw-r--r--  1 user  staff  120K lifemarq_contract.wasm
+```
+
+### Step 2: Create or Fund Stellar Account
+
+Create a new testnet account:
+
+```bash
+soroban config identity generate --global testnet-account --network testnet
+```
+
+Fund it with testnet XLM:
+
+```bash
 soroban config identity fund testnet-account --network testnet
 ```
 
-### Step 3: Deploy Contract
+Verify funding:
 
 ```bash
-soroban contract deploy \
-  --network testnet \
-  --source testnet-account \
-  target/wasm32-unknown-unknown/release/lifemarq_contract.wasm
+soroban config identity balance testnet-account --network testnet
+# Balance: 10000 XLM
 ```
 
-**Output:**
+### Step 3: Deploy Contract to Testnet
 
-```
-Contract ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
-```
-
-Save this Contract ID for later use.
-
-### Step 4: Configure Frontend
-
-Create `.env.local` in `frontend/`:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_CONTRACT_ID=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
-NEXT_PUBLIC_NETWORK=testnet
-```
-
-### Step 5: Configure API
-
-Create `.env` in `api/`:
-
-```env
+```bash
 NETWORK=testnet
-CONTRACT_ID=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
+CONTRACT_ID=$(soroban contract deploy \
+  --network $NETWORK \
+  --source testnet-account \
+  target/wasm32-unknown-unknown/release/lifemarq_contract.wasm)
+
+echo "Contract ID: $CONTRACT_ID"
+# Output: Contract ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
+```
+
+Save the Contract ID:
+
+```bash
+# Save to .env files
+echo "CONTRACT_ID=$CONTRACT_ID" > api/.env
+echo "NEXT_PUBLIC_CONTRACT_ID=$CONTRACT_ID" >> frontend/.env.local
+```
+
+### Step 4: Configure API
+
+Create `api/.env`:
+
+```env
+# Stellar Configuration
+NETWORK=testnet
+CONTRACT_ID=<contract-id-from-step-3>
 PORT=3001
+
+# RBAC Configuration (optional for MVP)
+ENABLE_PROVIDER_AUTH=false
+
+# Logging
+LOG_LEVEL=info
+```
+
+### Step 5: Configure Frontend
+
+Create `frontend/.env.local`:
+
+```env
+# API Configuration
+NEXT_PUBLIC_API_URL=http://localhost:3001
+
+# Stellar Configuration
+NEXT_PUBLIC_CONTRACT_ID=<contract-id-from-step-3>
+NEXT_PUBLIC_NETWORK=testnet
 ```
 
 ### Step 6: Run Services
 
-**Terminal 1 - Frontend:**
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:3000
-
-**Terminal 2 - API:**
+**Terminal 1 - API:**
 
 ```bash
 cd api
 npm install
 npm run dev
+# Output: Lifemarq API running on http://localhost:3001
+# Network: testnet
+# Contract ID: CAAAA...
 ```
 
-API running on http://localhost:3001
+**Terminal 2 - Frontend:**
 
-## Testing on Testnet
+```bash
+cd frontend
+npm install
+npm run dev
+# Output: ▲ Next.js 14.0.0
+# - Local: http://localhost:3000
+```
 
-### 1. Register a Donor
+### Step 7: Test Full Flow
 
-1. Go to http://localhost:3000/donor
-2. Enter a test national ID (e.g., "KE123456789")
-3. Select organs
-4. Click "Register & Sign with Freighter"
-5. Approve transaction in Freighter
+#### Register Donor
 
-### 2. Query Consent
+1. Open http://localhost:3000/donor
+2. Click "Connect Freighter Wallet"
+3. Approve in Freighter
+4. Enter national ID: "KE123456789"
+5. Select organs: kidney, liver
+6. Click "Register & Sign with Freighter"
+7. Approve transaction in Freighter
+8. Verify success message with hashed ID
 
-1. Go to http://localhost:3000/hospital
-2. Enter the hashed ID (from donor registration)
-3. Click "Query Consent Status"
-4. Verify result
+#### Query Consent
 
-### 3. Test Revocation
+1. Open http://localhost:3000/hospital
+2. Copy hashed ID from donor success message
+3. Paste into hospital portal
+4. Click "Query Consent Status"
+5. Verify "Consent Active" with organs listed
 
-1. Go to http://localhost:3000/donor
+#### Test Revocation
+
+1. Return to http://localhost:3000/donor
 2. Enter same national ID
 3. Click "Revoke Consent"
-4. Verify consent is now inactive
+4. Approve in Freighter
+5. Verify revocation success
+6. Return to hospital portal
+7. Query same hash
+8. Verify "No Active Consent"
+
+### Step 8: Run Integration Tests
+
+```bash
+cd api
+npm test -- integration.test.ts
+
+# Expected output:
+# PASS  src/__tests__/integration.test.ts
+#   Lifemarq Integration Tests
+#     Full Donor Registration Flow
+#       ✓ should complete full donor registration → query → verification workflow
+#       ✓ should handle unknown donor (not yet registered)
+#       ✓ should validate hash format in all endpoints
+#     Transaction Confirmation Tracking
+#       ✓ should track submission through confirmation
+#       ✓ should return 404 for unknown transaction
+#       ✓ should track multiple submissions independently
+#     ...
+#   Tests: 20 passed, 0 failed
+```
 
 ## Mainnet Deployment
 
-### Prerequisites
+### Step 1: Prepare for Production
 
-- Mainnet XLM in account
-- Contract audited and tested
-- Production domain configured
+**Code Review:**
 
-### Step 1: Build for Production
+```bash
+# Review all recent commits
+git log --oneline -20
+
+# Check for any hardcoded values
+grep -r "testnet" src/
+grep -r "localhost" src/
+```
+
+**Security Audit:**
+
+- [ ] Contract code reviewed by security team
+- [ ] API endpoints tested with security scanner
+- [ ] Database connections encrypted
+- [ ] All secrets in environment variables (not code)
+
+### Step 2: Build for Production
 
 ```bash
 cd contract
 cargo build --target wasm32-unknown-unknown --release --profile release
+
+# Verify binary size (should be < 256KB)
+ls -lh target/wasm32-unknown-unknown/release/lifemarq_contract.wasm
 ```
 
-### Step 2: Deploy to Mainnet
+### Step 3: Create Mainnet Account
+
+Create mainnet account with real XLM:
 
 ```bash
-soroban contract deploy \
-  --network public \
+soroban config identity generate --global mainnet-account --network public
+```
+
+Fund with sufficient XLM (at least 5 XLM for contract deployment + operations):
+
+```bash
+# Transfer XLM from exchange or existing account
+soroban config identity balance mainnet-account --network public
+```
+
+### Step 4: Deploy Contract to Mainnet
+
+```bash
+NETWORK=public
+CONTRACT_ID=$(soroban contract deploy \
+  --network $NETWORK \
   --source mainnet-account \
-  target/wasm32-unknown-unknown/release/lifemarq_contract.wasm
+  target/wasm32-unknown-unknown/release/lifemarq_contract.wasm)
+
+echo "Mainnet Contract ID: $CONTRACT_ID"
 ```
 
-### Step 3: Update Configuration
+Save the mainnet Contract ID for records and monitoring.
 
-Update environment variables for production:
+### Step 5: Update Production Configuration
 
-**Frontend (.env.production):**
-
-```env
-NEXT_PUBLIC_API_URL=https://api.lifemarq.org
-NEXT_PUBLIC_CONTRACT_ID=<mainnet-contract-id>
-NEXT_PUBLIC_NETWORK=public
-```
-
-**API (.env):**
+**Create `api/.env.production`:**
 
 ```env
+# Stellar Configuration
 NETWORK=public
 CONTRACT_ID=<mainnet-contract-id>
 PORT=3001
+
+# Security
+ENABLE_PROVIDER_AUTH=true
+API_KEY_ROTATION_DAYS=90
+
+# Monitoring
+LOG_LEVEL=warn
+SENTRY_DSN=<sentry-dsn>
+DATADOG_API_KEY=<datadog-key>
+
+# Rate Limiting
+RATE_LIMIT_REQUESTS=1000
+RATE_LIMIT_WINDOW_MS=60000
 ```
 
-### Step 4: Deploy Services
+**Create `frontend/.env.production`:**
 
-**Frontend:**
+```env
+# API Configuration
+NEXT_PUBLIC_API_URL=https://api.lifemarq.org
 
-```bash
-npm run build
-# Deploy to Vercel, Netlify, or your hosting
+# Stellar Configuration
+NEXT_PUBLIC_CONTRACT_ID=<mainnet-contract-id>
+NEXT_PUBLIC_NETWORK=public
+
+# Analytics
+NEXT_PUBLIC_ANALYTICS_ID=<analytics-id>
 ```
+
+### Step 6: Build & Deploy Services
 
 **API:**
 
 ```bash
+cd api
 npm run build
-# Deploy to AWS, Heroku, or your server
+npm start
+# Monitor startup: npm run dev (with --inspect for debugging)
 ```
 
-## Monitoring & Maintenance
-
-### Check Contract State
+**Frontend:**
 
 ```bash
-soroban contract invoke \
-  --network testnet \
-  --id <contract-id> \
-  --source testnet-account \
-  -- query \
-  --donor_id_hash <hash>
+cd frontend
+npm run build
+# Output: ✓ created 42 pages in 12.5s
+# Deploy to Vercel: vercel deploy --prod
 ```
 
-### View Events
+### Step 7: Verify Mainnet Deployment
+
+**Health Check:**
 
 ```bash
+curl https://api.lifemarq.org/health
+# Expected: {"status":"ok","network":"public","contractId":"CAAAA...","timestamp":"..."}
+```
+
+**Test Registration:**
+
+1. Go to https://lifemarq.org/donor
+2. Complete registration flow
+3. Verify transaction on Stellar blockchain
+4. Query via hospital portal
+5. Verify result
+
+**Monitor Logs:**
+
+```bash
+# Check application logs
+journalctl -u lifemarq-api -f
+
+# Check error logs
+tail -f /var/log/lifemarq/error.log
+
+# Monitor performance
+curl https://api.lifemarq.org/stats/submissions
+```
+
+## Monitoring & Operations
+
+### Health Monitoring
+
+```bash
+# Monitor contract state
 soroban contract events \
-  --network testnet \
-  --id <contract-id>
+  --network public \
+  --id <mainnet-contract-id>
+
+# Monitor API
+watch -n 5 'curl https://api.lifemarq.org/health'
+
+# Monitor registrations
+curl https://api.lifemarq.org/stats/submissions
 ```
 
-### Monitor API
+### Performance Monitoring
+
+- Track query latency: `GET /audit/queries`
+- Track verification metrics: `GET /verify/stats`
+- Monitor error rates: Log aggregation dashboard
+- Monitor Stellar RPC usage: Check rate limits
+
+### Backup & Recovery
+
+**Daily Backup:**
 
 ```bash
-curl http://localhost:3001/health
+# Backup audit logs
+mysqldump lifemarq_audit > backups/audit_$(date +%Y%m%d).sql
+
+# Backup configuration
+cp api/.env backups/api_env_$(date +%Y%m%d).backup
 ```
+
+**Disaster Recovery:**
+
+If mainnet contract corrupts:
+
+1. Deploy new contract with same logic
+2. Migrate consent records to new contract (if applicable)
+3. Update API configuration
+4. Update frontend configuration
+5. Test full flow on new contract
+6. Announce switch to hospitals/donors
 
 ## Troubleshooting
 
@@ -226,50 +410,135 @@ curl http://localhost:3001/health
 
 **Error:** "Account not found"
 
-- Solution: Fund account with testnet XLM
+```bash
+# Solution: Fund account first
+soroban config identity balance mainnet-account
+# If 0 XLM: Send XLM to account address
+```
 
 **Error:** "Invalid WASM"
 
-- Solution: Ensure Rust target is installed: `rustup target add wasm32-unknown-unknown`
+```bash
+# Solution: Verify build
+cargo check --target wasm32-unknown-unknown
+file target/wasm32-unknown-unknown/release/lifemarq_contract.wasm
+```
 
-### Frontend Can't Connect to Contract
-
-**Error:** "Contract not found"
-
-- Solution: Verify CONTRACT_ID in .env.local matches deployed contract
-
-### API Query Returns Error
+### API Won't Connect to Contract
 
 **Error:** "Failed to query consent record"
 
-- Solution: Check CONTRACT_ID and NETWORK in .env
+```bash
+# Verify configuration
+cat api/.env | grep CONTRACT_ID
+
+# Test contract directly
+soroban contract invoke \
+  --network public \
+  --id <contract-id> \
+  --source mainnet-account \
+  -- query \
+  --donor_id_hash "a3f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7"
+```
+
+### Frontend Can't Query API
+
+**Error:** "CORS error"
+
+```bash
+# Check API CORS configuration
+curl -H "Origin: https://lifemarq.org" \
+  -H "Access-Control-Request-Method: POST" \
+  -X OPTIONS https://api.lifemarq.org/health -v
+```
+
+### Database Connection Issues
+
+**Error:** "Connection timeout"
+
+```bash
+# Check database status
+psql -h localhost -U lifemarq -d lifemarq_prod -c "SELECT 1"
+
+# Check connection pool
+curl https://api.lifemarq.org/health
+```
 
 ## Rollback Procedure
 
-If issues occur on mainnet:
+If production deployment fails:
 
-1. **Pause API**: Stop accepting new queries
-2. **Notify Users**: Inform hospitals of temporary unavailability
-3. **Investigate**: Check contract state and events
-4. **Deploy Patch**: If contract bug found, deploy new version
-5. **Migrate Data**: If needed, migrate consent records to new contract
+### Immediate (< 5 minutes)
+
+1. Stop accepting new registrations
+2. Set maintenance page on frontend
+3. Disable hospital queries endpoint
+
+```bash
+systemctl stop lifemarq-api
+systemctl stop lifemarq-frontend
+```
+
+### Short-term (5-30 minutes)
+
+1. Restore previous API version
+2. Restore previous frontend version
+3. Verify health checks
+4. Resume operations
+
+```bash
+# Rollback API
+git checkout <previous-tag>
+npm install && npm run build
+systemctl start lifemarq-api
+
+# Rollback Frontend
+npm run build && vercel deploy --prod <previous-sha>
+```
+
+### Analysis (> 1 hour)
+
+1. Identify root cause
+2. Log incident details
+3. Plan fix
+4. Redeploy when ready
+
+### Communication
+
+- Notify hospitals of issue
+- Provide status updates every 15 minutes
+- Announce resolution
 
 ## Security Checklist
 
-- [ ] Contract audited by security firm
-- [ ] All environment variables use secrets management
-- [ ] API has rate limiting enabled
-- [ ] CORS properly configured
-- [ ] HTTPS enforced on all endpoints
-- [ ] Monitoring and alerting configured
-- [ ] Backup and disaster recovery plan in place
-- [ ] Incident response plan documented
+### Before Every Deployment
 
-## Support
+- [ ] All tests passing
+- [ ] Code review complete
+- [ ] No secrets in logs
+- [ ] API key rotation current
+- [ ] SSL certificates valid
+- [ ] Rate limiting enabled
+- [ ] Error messages don't leak info
+
+### Ongoing
+
+- [ ] Monitor for suspicious activity
+- [ ] Review audit logs weekly
+- [ ] Update dependencies monthly
+- [ ] Test disaster recovery quarterly
+- [ ] Security audit annually
+
+## Support & Escalation
 
 For deployment issues:
 
-1. Check logs: `npm run dev` shows detailed errors
-2. Verify configuration: Double-check .env files
-3. Test locally first: Always test on testnet before mainnet
-4. Contact support: [support@lifemarq.org]
+1. Check logs: `journalctl -u lifemarq-api -f`
+2. Check health: `curl https://api.lifemarq.org/health`
+3. Verify configuration: `env | grep LIFEMARQ`
+4. Contact on-call engineer
+5. Escalate to security team if data compromise suspected
+
+---
+
+**Last Updated:** Phase 6 - Ready for Production Deployment

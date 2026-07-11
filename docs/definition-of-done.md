@@ -236,7 +236,8 @@ cd api
 npm test
 # Output: PASS  src/__tests__/index.test.ts
 # PASS  src/__tests__/stellar-client.test.ts
-# Tests: 12 passed, 0 failed, 0 skipped
+# PASS  src/__tests__/integration.test.ts
+# Tests: 25+ passed, 0 failed, 0 skipped
 ```
 
 ✅ **No skipped tests**
@@ -276,6 +277,122 @@ If Phase 4 fails:
 3. Check for flaky tests: Run tests multiple times
 4. Review test mocks: Are they set up correctly?
 5. Check for timing issues: Add delays if needed
+
+---
+
+## Phase 5: Frontend Reconnection
+
+### Criteria
+
+✅ **Donor UI connects to API**
+
+```bash
+curl -X POST http://localhost:3001/consent/register \
+  -H "Content-Type: application/json" \
+  -d '{"idHash":"a3f8...","wallet":"GAAAA...","organs":["kidney"]}'
+# Output: {"status":"registered",...}
+```
+
+✅ **Hospital portal queries API**
+
+```bash
+curl http://localhost:3001/consent/a3f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7
+# Output: {"id_hash":"a3f8...","consent_active":true,"organs":[...],...}
+```
+
+✅ **Wallet integration is validated**
+
+- `connectWallet()` returns valid public key
+- `signTransaction()` handles XDR correctly
+- `hashNationalId()` produces 64-char hex hash
+- Error messages are specific and actionable
+
+✅ **UI state handling works**
+
+- Loading, signing, confirming states show correct messages
+- Error states distinguish between recoverable/non-recoverable
+- Success messages display with transaction details
+- Buttons disable during operations
+
+### Verification Checklist
+
+- [ ] Donor can register end-to-end
+- [ ] Hospital can query consent immediately
+- [ ] Wallet functions work with Freighter
+- [ ] UI shows progress at each step
+- [ ] Error messages guide user recovery
+- [ ] All TypeScript strict mode enabled
+- [ ] No console errors or warnings
+
+### Rollback Plan
+
+If Phase 5 fails:
+
+1. Check API is running: `curl http://localhost:3001/health`
+2. Check wallet.ts functions: Review browser console
+3. Check environment variables: `.env.local`
+4. Check Freighter: Is it connected to testnet?
+5. Check contract ID: Does it match API?
+
+---
+
+## Phase 6: Integrity + Polish
+
+### Criteria
+
+✅ **Integration tests pass**
+
+```bash
+cd api
+npm test -- integration.test.ts
+# Output: PASS  src/__tests__/integration.test.ts
+# Tests: 15+ passed, 0 failed
+```
+
+✅ **Full flow tested end-to-end**
+
+- Donor registration → contract → query → verification
+- Transaction tracking and confirmation
+- Consent revocation flow
+- Hospital verification with audit logging
+- Error handling and edge cases
+
+✅ **Documentation is production-ready**
+
+- Definition of Done covers all phases
+- Deployment guide has step-by-step instructions
+- Troubleshooting guide covers common issues
+- Security checklist is complete
+- Rollback procedures documented
+
+✅ **System is ready for deployment**
+
+- All tests passing
+- Error handling comprehensive
+- Audit logging in place
+- Monitoring endpoints available
+- Configuration management correct
+
+### Verification Checklist
+
+- [ ] All integration tests pass
+- [ ] Full donor → contract → verification flow tested
+- [ ] Audit logs record all operations
+- [ ] Health check endpoints working
+- [ ] Error responses are consistent
+- [ ] Documentation is complete
+- [ ] Deployment steps are clear
+- [ ] Rollback plan is tested
+
+### Rollback Plan
+
+If Phase 6 fails:
+
+1. Check test output: `npm test -- integration.test.ts --verbose`
+2. Check documentation: Review all .md files
+3. Check deployment steps: Follow guide manually
+4. Check error handling: Review error responses
+5. Review audit logs: Check completeness
 
 ---
 
