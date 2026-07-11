@@ -125,6 +125,8 @@ export default function DonorPortal() {
       const xdr = transaction.toXDR();
 
       // Sign with Freighter
+      setMessage("Waiting for wallet signature...");
+      setMessageType("info");
       const signedXdr = await signTransaction(xdr, network);
 
       // Submit to Soroban RPC
@@ -138,6 +140,7 @@ export default function DonorPortal() {
         serverURL: sorobanUrl,
       });
 
+      setMessage("Submitting transaction to blockchain...");
       const signedTx = TransactionBuilder.fromXDR(
         signedXdr,
         network === "testnet"
@@ -147,10 +150,23 @@ export default function DonorPortal() {
 
       const result = await sorobanClient.sendTransaction(signedTx);
 
+      // Record submission to backend for tracking
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      await fetch(`${apiUrl}/submission/${result.hash}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          consentHash: idHash,
+          wallet,
+          operation: "register",
+        }),
+      }).catch((err) => console.warn("Failed to record submission:", err));
+
       if (result.status === "PENDING") {
         // Poll for completion
         let pollCount = 0;
         while (pollCount < 30) {
+          setMessage(`Confirming transaction (${pollCount}/30 attempts)...`);
           const status = await sorobanClient.getTransaction(result.hash);
           if (status.status === "SUCCESS") {
             setState("success");
@@ -163,12 +179,12 @@ export default function DonorPortal() {
             setOrgans([]);
             return;
           } else if (status.status === "FAILED") {
-            throw new Error("Transaction failed");
+            throw new Error("Transaction failed on blockchain");
           }
           pollCount++;
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        throw new Error("Transaction timeout");
+        throw new Error("Transaction confirmation timeout");
       } else if (result.status === "SUCCESS") {
         setState("success");
         setSuccessData({ idHash, organs });
