@@ -9,9 +9,11 @@ interface ConsentResult {
   queried_at: string;
 }
 
+type QueryState = "idle" | "loading" | "success" | "error" | "not_found";
+
 export default function HospitalQuery() {
   const [patientIdHash, setPatientIdHash] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [state, setState] = useState<QueryState>("idle");
   const [result, setResult] = useState<ConsentResult | null>(null);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error" | "info">(
@@ -35,7 +37,7 @@ export default function HospitalQuery() {
       return;
     }
 
-    setLoading(true);
+    setState("loading");
     setMessage("");
     setResult(null);
     setHasQueried(true);
@@ -47,7 +49,12 @@ export default function HospitalQuery() {
 
       if (!response.ok) {
         if (response.status === 503) {
-          throw new Error("Registry unavailable - Stellar network may be down");
+          setState("error");
+          setMessage(
+            "Registry unavailable - Stellar network may be down. Please retry.",
+          );
+          setMessageType("error");
+          return;
         }
         throw new Error(`API error: ${response.status}`);
       }
@@ -56,21 +63,22 @@ export default function HospitalQuery() {
       setResult(data);
 
       if (data.consent_active) {
+        setState("success");
         setMessage(
-          `Consent verified: ${data.organs.length} organ(s) registered for donation`,
+          `✓ Consent verified: ${data.organs.length} organ(s) available`,
         );
         setMessageType("success");
       } else {
-        setMessage("No active consent record found for this patient");
+        setState("not_found");
+        setMessage("No active consent record found");
         setMessageType("info");
       }
     } catch (error: any) {
       console.error("Query error:", error);
+      setState("error");
       setMessage(error.message || "Error querying consent record");
       setMessageType("error");
       setResult(null);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -79,6 +87,7 @@ export default function HospitalQuery() {
     setResult(null);
     setMessage("");
     setHasQueried(false);
+    setState("idle");
   };
 
   return (
@@ -99,7 +108,7 @@ export default function HospitalQuery() {
             placeholder="Enter hashed patient ID (64-char hex)"
             value={patientIdHash}
             onChange={(e) => setPatientIdHash(e.target.value.toLowerCase())}
-            disabled={loading}
+            disabled={state === "loading"}
           />
           <p style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
             Enter the SHA-256 hash of the patient's national ID
@@ -107,13 +116,17 @@ export default function HospitalQuery() {
         </div>
 
         <div style={{ display: "flex", gap: "10px" }}>
-          <button onClick={handleQuery} disabled={loading} style={{ flex: 1 }}>
-            {loading ? "Querying..." : "Query Consent Status"}
+          <button
+            onClick={handleQuery}
+            disabled={state === "loading"}
+            style={{ flex: 1 }}
+          >
+            {state === "loading" ? "Querying..." : "Query Consent Status"}
           </button>
           {hasQueried && (
             <button
               onClick={handleClear}
-              disabled={loading}
+              disabled={state === "loading"}
               style={{ backgroundColor: "#6c757d" }}
             >
               Clear

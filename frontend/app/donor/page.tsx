@@ -15,11 +15,24 @@ import {
   SorobanRpc,
 } from "stellar-sdk";
 
-type State = "idle" | "submitting" | "success";
+type State =
+  | "idle"
+  | "wallet_connecting"
+  | "submitting"
+  | "signing"
+  | "confirming"
+  | "success"
+  | "error";
 
 interface SuccessData {
   idHash: string;
   organs: string[];
+}
+
+interface ErrorState {
+  code: string;
+  message: string;
+  recoverable: boolean;
 }
 
 export default function DonorPortal() {
@@ -32,6 +45,7 @@ export default function DonorPortal() {
     "info",
   );
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
+  const [error, setError] = useState<ErrorState | null>(null);
 
   const organOptions = [
     "kidney",
@@ -45,11 +59,23 @@ export default function DonorPortal() {
   const handleConnectWallet = async () => {
     try {
       setMessage("");
+      setError(null);
+      setState("wallet_connecting");
       const publicKey = await connectWallet();
       setWallet(publicKey);
+      setState("idle");
       setMessage("Wallet connected successfully");
       setMessageType("success");
     } catch (error: any) {
+      setState("error");
+      const errorCode = error.message?.includes("not found")
+        ? "FREIGHTER_NOT_INSTALLED"
+        : "WALLET_CONNECTION_FAILED";
+      setError({
+        code: errorCode,
+        message: error.message,
+        recoverable: true,
+      });
       setMessage(error.message || "Failed to connect wallet");
       setMessageType("error");
     }
@@ -65,6 +91,11 @@ export default function DonorPortal() {
     if (!wallet) {
       setMessage("Please connect your wallet first");
       setMessageType("error");
+      setError({
+        code: "NO_WALLET",
+        message: "Wallet not connected",
+        recoverable: true,
+      });
       return;
     }
 
@@ -80,8 +111,9 @@ export default function DonorPortal() {
       return;
     }
 
+    setError(null);
     setState("submitting");
-    setMessage("");
+    setMessage("Hashing national ID...");
 
     try {
       // Hash national ID client-side (never transmitted raw)
@@ -92,13 +124,19 @@ export default function DonorPortal() {
       const network = process.env.NEXT_PUBLIC_NETWORK || "testnet";
 
       if (!contractId) {
-        throw new Error("Contract ID not configured");
+        throw {
+          code: "CONFIG_ERROR",
+          message: "Contract ID not configured",
+          recoverable: false,
+        };
       }
 
       // Create contract instance
       const contract = new Contract(contractId);
 
       // Build transaction
+      setState("submitting");
+      setMessage("Building transaction...");
       const sourceAccount = {
         accountId: wallet,
         sequenceNumber: "0",
@@ -125,8 +163,8 @@ export default function DonorPortal() {
       const xdr = transaction.toXDR();
 
       // Sign with Freighter
-      setMessage("Waiting for wallet signature...");
-      setMessageType("info");
+      setState("signing");
+      setMessage("Waiting for your wallet to sign...");
       const signedXdr = await signTransaction(xdr, network);
 
       // Submit to Soroban RPC
@@ -140,6 +178,7 @@ export default function DonorPortal() {
         serverURL: sorobanUrl,
       });
 
+      setState("confirming");
       setMessage("Submitting transaction to blockchain...");
       const signedTx = TransactionBuilder.fromXDR(
         signedXdr,
@@ -166,37 +205,60 @@ export default function DonorPortal() {
         // Poll for completion
         let pollCount = 0;
         while (pollCount < 30) {
-          setMessage(`Confirming transaction (${pollCount}/30 attempts)...`);
+          setState("confirming");
+          setMessage(
+            `Confirming on blockchain (${pollCount + 1}/30 attempts)...`,
+          );
           const status = await sorobanClient.getTransaction(result.hash);
           if (status.status === "SUCCESS") {
             setState("success");
             setSuccessData({ idHash, organs });
             setMessage(
-              "Registration successful! Your consent is now on-chain.",
+              "✓ Registration successful! Your consent is now on-chain.",
             );
             setMessageType("success");
             setNationalId("");
             setOrgans([]);
             return;
           } else if (status.status === "FAILED") {
-            throw new Error("Transaction failed on blockchain");
+            throw {
+              code: "TX_FAILED",
+              message: "Transaction was rejected by the blockchain",
+              recoverable: false,
+            };
           }
           pollCount++;
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        throw new Error("Transaction confirmation timeout");
+        throw {
+          code: "TX_TIMEOUT",
+          message:
+            "Confirmation timeout. Your consent may still be recorded. Check your wallet or try again.",
+          recoverable: true,
+        };
       } else if (result.status === "SUCCESS") {
         setState("success");
         setSuccessData({ idHash, organs });
-        setMessage("Registration successful! Your consent is now on-chain.");
+        setMessage("✓ Registration successful! Your consent is now on-chain.");
         setMessageType("success");
         setNationalId("");
         setOrgans([]);
       } else {
-        throw new Error(`Transaction failed: ${result.status}`);
+        throw {
+          code: "TX_FAILED",
+          message: `Transaction failed with status: ${result.status}`,
+          recoverable: false,
+        };
       }
     } catch (error: any) {
-      setState("idle");
+      setState("error");
+      const errorCode = error.code || "REGISTRATION_FAILED";
+      const recoverable = error.recoverable !== false;
+      setError({
+        code: errorCode,
+        message: error.message || "Registration failed",
+        recoverable,
+      });
       setMessage(error.message || "Registration failed");
       setMessageType("error");
     }
@@ -300,10 +362,12 @@ export default function DonorPortal() {
           ) : (
             <button
               onClick={handleConnectWallet}
-              disabled={state === "submitting"}
+              disabled={state !== "idle"}
               style={{ backgroundColor: "#1976d2" }}
             >
-              Connect Freighter Wallet
+              {state === "wallet_connecting"
+                ? "Connecting..."
+                : "Connect Freighter Wallet"}
             </button>
           )}
         </div>
@@ -321,7 +385,7 @@ export default function DonorPortal() {
                 placeholder="Enter your national ID"
                 value={nationalId}
                 onChange={(e) => setNationalId(e.target.value)}
-                disabled={state === "submitting"}
+                disabled={state !== "idle" && state !== "error"}
               />
               <p style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
                 Your ID is hashed with SHA-256 in your browser before anything
@@ -352,7 +416,7 @@ export default function DonorPortal() {
                       type="checkbox"
                       checked={organs.includes(organ)}
                       onChange={() => handleOrganToggle(organ)}
-                      disabled={state === "submitting"}
+                      disabled={state !== "idle" && state !== "error"}
                     />
                     {organ.charAt(0).toUpperCase() + organ.slice(1)}
                   </label>
@@ -363,14 +427,17 @@ export default function DonorPortal() {
             {/* Register Button */}
             <button
               onClick={handleRegister}
-              disabled={state === "submitting"}
+              disabled={state !== "idle" && state !== "error"}
               style={{
-                backgroundColor: state === "submitting" ? "#ccc" : "#28a745",
+                backgroundColor:
+                  state !== "idle" && state !== "error" ? "#ccc" : "#28a745",
               }}
             >
-              {state === "submitting"
-                ? "Signing & Submitting..."
-                : "Register & Sign with Freighter"}
+              {state === "submitting" && "Building transaction..."}
+              {state === "signing" && "Signing with wallet..."}
+              {state === "confirming" && "Confirming on blockchain..."}
+              {(state === "idle" || state === "error") &&
+                "Register & Sign with Freighter"}
             </button>
           </>
         )}
