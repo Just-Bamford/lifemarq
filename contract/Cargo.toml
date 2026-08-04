@@ -8,8 +8,8 @@ license = "MIT"
 repository = "https://github.com/Just-Bamford/lifemarq"
 
 [dependencies]
-soroban-sdk = "=21.0"
-soroban-sdk-macros = "=21.0"
+soroban-sdk = "21.4"
+soroban-sdk-macros = "21.4"
 
 [lib]
 crate-type = ["cdylib"]
