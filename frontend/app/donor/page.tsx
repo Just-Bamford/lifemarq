@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import QRCode from "qrcode";
 import {
   connectWallet,
   hashNationalId,
@@ -46,6 +47,8 @@ export default function DonorPortal() {
   );
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
   const [error, setError] = useState<ErrorState | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const organOptions = [
     "kidney",
@@ -271,6 +274,42 @@ export default function DonorPortal() {
   };
 
   if (state === "success" && successData) {
+    // Generate QR code when success state is reached
+    useEffect(() => {
+      if (qrCanvasRef.current && successData && !qrCodeUrl) {
+        QRCode.toCanvas(
+          qrCanvasRef.current,
+          successData.idHash,
+          {
+            width: 300,
+            margin: 2,
+            color: {
+              dark: "#000000",
+              light: "#ffffff",
+            },
+          },
+          (error) => {
+            if (error) {
+              console.error("QR code generation failed:", error);
+            } else {
+              // Convert canvas to image data URL for download
+              const url = qrCanvasRef.current?.toDataURL("image/png");
+              setQrCodeUrl(url || null);
+            }
+          },
+        );
+      }
+    }, [successData, qrCodeUrl]);
+
+    const downloadQRCode = () => {
+      if (qrCanvasRef.current) {
+        const link = document.createElement("a");
+        link.href = qrCanvasRef.current.toDataURL("image/png");
+        link.download = `donor-card-${successData.idHash.substring(0, 8)}.png`;
+        link.click();
+      }
+    };
+
     return (
       <div>
         <div className="card">
@@ -317,6 +356,52 @@ export default function DonorPortal() {
           <button onClick={handleReset} style={{ backgroundColor: "#28a745" }}>
             Register Another Donor
           </button>
+        </div>
+
+        {/* QR Code Donor Card Section */}
+        <div className="card">
+          <h3>Your Donor Card (QR Code)</h3>
+          <p>
+            Download and print this QR code. Carry it with you so hospitals can
+            quickly verify your consent in an emergency.
+          </p>
+
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "#f8f9fa",
+              borderRadius: "4px",
+              textAlign: "center",
+              marginBottom: "15px",
+            }}
+          >
+            <canvas
+              ref={qrCanvasRef}
+              style={{
+                border: "2px solid #ddd",
+                borderRadius: "4px",
+                margin: "0 auto",
+                display: "block",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={downloadQRCode}
+            style={{
+              backgroundColor: "#007bff",
+              marginBottom: "10px",
+              width: "100%",
+            }}
+          >
+            Download Donor Card (PNG)
+          </button>
+
+          <p style={{ fontSize: "12px", color: "#666", marginTop: "10px" }}>
+            This QR code encodes only your consent hash — not your personal
+            information. When scanned, hospitals can instantly verify your organ
+            donation status.
+          </p>
         </div>
 
         <div className="card">
