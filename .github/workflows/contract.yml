@@ -1,0 +1,82 @@
+name: Contract CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build contract WASM
+        run: |
+          cd contract
+          cargo build --target wasm32-unknown-unknown --release
+
+      - name: Run contract tests
+        run: |
+          cd contract
+          cargo test --lib
+
+      - name: Check formatting
+        run: |
+          cd contract
+          cargo fmt -- --check
+
+      - name: Run clippy
+        run: |
+          cd contract
+          cargo clippy -- -D warnings
+
+  api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install API dependencies
+        run: |
+          cd api
+          npm install
+
+      - name: Build API
+        run: |
+          cd api
+          npm run build
+
+      - name: Run API tests
+        run: |
+          cd api
+          npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
