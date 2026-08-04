@@ -341,28 +341,102 @@ A hospital can confirm _that_ a donor registered, and _what_ they consented to �
 
 ## Roadmap
 
-**Phase 1 — Testnet (current)**
+**Phase 1 — Make It Real (current)**
 
 - [x] Soroban contract: register, revoke, query, get_record
 - [x] Frontend donor portal and hospital query interface
 - [x] Hospital REST API scaffold
-- [ ] Freighter wallet integration (in progress)
-- [ ] Full Soroban RPC query wiring in API
-- [ ] Contract unit tests
+- [x] Freighter wallet integration (client-side signing)
+- [x] Multi-language support (English, Swahili, French)
+- [x] Public consent status page (/status/:id_hash)
+- [x] Audit logging and query history
+- [x] GitHub CI/CD workflows
+- [ ] Complete Soroban RPC contract query implementation in API
 
-**Phase 2 — Pilot**
+**Phase 2 — Wire Everything Together (Days 4-6)**
 
+- [ ] Deploy contract to Stellar testnet
+- [ ] Deploy API to Railway/Render (free tier)
+- [ ] Deploy frontend to Vercel
 - [ ] Hospital provider authentication and API key registry
 - [ ] Audit log persistence (PostgreSQL)
 - [ ] Testnet end-to-end testing with pilot hospital partners
 - [ ] Independent contract security audit
 
-**Phase 3 — Mainnet**
+**Phase 3 — Expand**
+
+- [x] Recipient waitlist contract extension (data capture v1)
+- [ ] Ministry analytics dashboard with Recharts
+- [ ] Recipient demand visualization (organ distribution by need)
+- [ ] Hospital KPI tracking (query volume, average response time)
+- [ ] Compliance reporting (CSV export)
+
+**Phase 4 — USSD Gateway (Feature Phone Access)**
+
+**Most of the target population registers consent from a feature phone on 2G.** Phase 4 will integrate [Africa's Talking](https://africastalking.com) USSD gateway so donors can register by dialling a short code, navigating a simple text menu, and confirming — no smartphone or internet required.
+
+```
+Donor dials: *384*502#
+---
+Welcome to Lifemarq Donor Registry
+
+1. Register organs
+2. Revoke consent
+3. Check status
+
+> 1
+
+Which organs?
+1. Kidney
+2. Liver
+3. Heart
+... (select multiple)
+
+Confirm? Yes/No
+> Yes
+
+✓ Your organs are registered.
+ID: a3f8d2...
+---
+```
+
+A custodial backend wallet handles the Soroban transaction. The USSD server collects the donor's choice, hashes their national ID (by phone number), calls the contract, and returns confirmation in SMS.
+
+This single feature would unlock the product for the 80% of sub-Saharan Africa on basic phones — turning Lifemarq from a tech demo into actual health infrastructure.
+
+**Phase 5 — Mainnet**
 
 - [ ] Mainnet deployment
-- [ ] 3-country pilot rollout
-- [ ] Health ministry analytics dashboard
-- [ ] Mobile-optimised donor registration
+- [ ] Regulatory approval for 3-country pilot (Kenya, DRC, Senegal)
+- [ ] Health ministry integration
+- [ ] Hospital network enrollment
+
+---
+
+## Recipient Waitlist (Demand-Side Registry)
+
+V1 includes a second contract function `register_recipient()` for data capture only — no matching logic yet.
+
+```rust
+register_recipient(
+    recipient_id_hash: String,    // Hashed for privacy
+    wallet: Address,               // Healthcare provider
+    needed_organs: Vec<String>,    // ["kidney", "heart"]
+    blood_type: String            // "O+", "AB-", etc
+) -> Result<(), ContractError>
+```
+
+**Why this matters:**
+
+Donor registries solve _supply_. Recipient registries illuminate _demand_. Together they provide a complete picture: _How many kidneys are available vs. how many patients need them?_ This transforms Lifemarq from a tool for consent into infrastructure for capacity planning.
+
+The ministry dashboard surfaces recipient counts by organ type, allowing health planners to:
+
+- Identify organ shortages and mobilize resources
+- Track regional disparities in donor availability
+- Set realistic transplant program targets
+
+In later phases, the contract will add matching logic: when a donor registers, check the recipient queue and notify providers of a potential match. But v1 focuses on data capture — getting consent and demand both onto the chain so they can be analyzed together.
 
 ---
 

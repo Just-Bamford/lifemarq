@@ -141,6 +141,41 @@ impl LifemarqContract {
     pub fn get_record(env: Env, donor_id_hash: String) -> Option<ConsentRecord> {
         Registry::get_record(&env, donor_id_hash)
     }
+
+    /// Register a recipient on the organ transplant waitlist
+    /// 
+    /// **Event**: Emits `lifemarq.register_recipient` event
+    /// 
+    /// Data capture only in v1 — no matching logic yet.
+    /// Used to illuminate demand side of donor supply.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `recipient_id_hash` - SHA-256 hash of recipient national ID (privacy-preserving)
+    /// * `wallet` - Healthcare provider wallet address (must sign this call)
+    /// * `needed_organs` - List of organs needed (e.g., ["kidney", "heart"])
+    /// * `blood_type` - Blood type for compatibility (e.g., "O+", "AB-")
+    /// 
+    /// # Returns
+    /// * `Ok(())` if registration successful
+    /// * `Err(Unauthorized)` if wallet did not authenticate
+    pub fn register_recipient(
+        env: Env,
+        recipient_id_hash: String,
+        wallet: Address,
+        needed_organs: Vec<String>,
+        blood_type: String,
+    ) -> Result<(), ContractError> {
+        Registry::register_recipient(&env, recipient_id_hash, wallet, needed_organs, blood_type)
+    }
+
+    /// Query recipient waitlist count by organ (read-only)
+    /// 
+    /// Returns the number of recipients waiting for a specific organ.
+    /// Used by ministry dashboard to show demand metrics.
+    pub fn get_recipient_count(env: Env, organ: String) -> u32 {
+        Registry::get_recipient_count(&env, organ)
+    }
 }
 
 #[cfg(test)]

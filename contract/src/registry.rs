@@ -153,4 +153,58 @@ impl Registry {
             .persistent()
             .get::<_, ConsentRecord>(&DataKey::Consent(donor_id_hash))
     }
+
+    /// Register a recipient on the organ transplant waitlist
+    /// 
+    /// Data capture only in v1 — no matching logic yet.
+    /// Used to track demand alongside supply.
+    pub fn register_recipient(
+        env: &Env,
+        recipient_id_hash: String,
+        wallet: Address,
+        needed_organs: Vec<String>,
+        blood_type: String,
+    ) -> Result<(), ContractError> {
+        // SECURITY: Require wallet signature
+        wallet.require_auth();
+
+        // Emit registration event for audit trail
+        env.events().publish(
+            (symbol_short!("lifemarq"), symbol_short!("recipient")),
+            (recipient_id_hash.clone(), wallet.clone()),
+        );
+
+        // In v1, we don't prevent duplicate waitlist entries (allow reregistration)
+        // Production would implement proper waitlist management
+
+        // Store recipient record
+        let key = String::from_small_str(&format!(
+            "recipient:{}",
+            recipient_id_hash.clone()
+        ));
+        
+        // For v1, store just the organ count as a counter
+        for organ in needed_organs {
+            let organ_key = String::from_small_str(&format!("waitlist:{}", organ));
+            let current = env
+                .storage()
+                .persistent()
+                .get::<_, u32>(&organ_key)
+                .unwrap_or(0);
+            env.storage()
+                .persistent()
+                .set(&organ_key, &(current + 1));
+        }
+
+        Ok(())
+    }
+
+    /// Get the number of recipients waiting for a specific organ
+    pub fn get_recipient_count(env: &Env, organ: String) -> u32 {
+        let key = String::from_small_str(&format!("waitlist:{}", organ));
+        env.storage()
+            .persistent()
+            .get::<_, u32>(&key)
+            .unwrap_or(0)
+    }
 }

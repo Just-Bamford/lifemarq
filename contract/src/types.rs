@@ -59,12 +59,40 @@ pub struct ConsentRecord {
   pub is_active: bool,
 }
 
-/// Storage key for consent records
+/// Represents a recipient on the organ transplant waitlist
+/// 
+/// Data capture only in v1 — no matching logic yet.
+/// Records supply and demand for capacity planning.
+/// 
+/// Storage Layout:
+/// - recipient_id_hash: String - 32 bytes (SHA-256 hex, hashed for privacy)
+/// - wallet: Address - 32 bytes
+/// - needed_organs: Vec<String> - dynamic size
+/// - blood_type: String - variable length
+/// - registered_at: u64 - 8 bytes
+#[derive(Clone)]
+#[contracttype]
+pub struct RecipientRecord {
+    /// SHA-256 hash of recipient national ID (privacy-preserving)
+    pub recipient_id_hash: String,
+    /// Wallet address of the healthcare provider managing this record
+    pub wallet: Address,
+    /// List of organs needed by this recipient (e.g., ["kidney", "heart"])
+    pub needed_organs: Vec<String>,
+    /// Blood type for compatibility (e.g., "O+", "AB-")
+    pub blood_type: String,
+    /// Timestamp of waitlist registration (Unix seconds)
+    pub registered_at: u64,
+}
+
+/// Storage key for consent and recipient records
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
     /// Keyed by donor_id_hash (SHA-256 hex string)
     Consent(String),
+    /// Keyed by recipient_id_hash (SHA-256 hex string)
+    Recipient(String),
 }
 
 /// Explicit consent state for clarity in state machine transitions
