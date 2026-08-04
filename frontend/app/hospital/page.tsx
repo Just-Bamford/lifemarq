@@ -11,6 +11,13 @@ interface ConsentResult {
 
 type QueryState = "idle" | "loading" | "success" | "error" | "not_found";
 
+interface QueryLogEntry {
+  timestamp: string;
+  idHash: string;
+  consentActive: boolean;
+  organs: string[];
+}
+
 export default function HospitalQuery() {
   const [patientIdHash, setPatientIdHash] = useState("");
   const [state, setState] = useState<QueryState>("idle");
@@ -20,6 +27,7 @@ export default function HospitalQuery() {
     "info",
   );
   const [hasQueried, setHasQueried] = useState(false);
+  const [queryLog, setQueryLog] = useState<QueryLogEntry[]>([]);
 
   const handleQuery = async () => {
     if (!patientIdHash.trim()) {
@@ -61,6 +69,19 @@ export default function HospitalQuery() {
 
       const data: ConsentResult = await response.json();
       setResult(data);
+
+      // Add to query log
+      setQueryLog((prev) =>
+        [
+          {
+            timestamp: new Date().toLocaleTimeString(),
+            idHash: patientIdHash,
+            consentActive: data.consent_active,
+            organs: data.organs,
+          },
+          ...prev,
+        ].slice(0, 20),
+      ); // Keep last 20 queries
 
       if (data.consent_active) {
         setState("success");
@@ -223,6 +244,81 @@ export default function HospitalQuery() {
           >
             Queried: {new Date(result.queried_at).toLocaleString()}
           </p>
+        </div>
+      )}
+
+      {queryLog.length > 0 && (
+        <div className="card">
+          <h3>Query History (This Session)</h3>
+          <p style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}>
+            Last {queryLog.length} queries
+          </p>
+          <div
+            style={{
+              maxHeight: "300px",
+              overflowY: "auto",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                fontSize: "12px",
+                borderCollapse: "collapse",
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    backgroundColor: "#f5f5f5",
+                    borderBottom: "1px solid #ddd",
+                  }}
+                >
+                  <th style={{ padding: "8px", textAlign: "left" }}>Time</th>
+                  <th style={{ padding: "8px", textAlign: "left" }}>Status</th>
+                  <th style={{ padding: "8px", textAlign: "left" }}>
+                    Hash (first 8)
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {queryLog.map((entry, idx) => (
+                  <tr
+                    key={idx}
+                    style={{
+                      borderBottom: "1px solid #eee",
+                      backgroundColor: entry.consentActive
+                        ? "#f0fdf4"
+                        : "#fef2f2",
+                    }}
+                  >
+                    <td style={{ padding: "8px" }}>{entry.timestamp}</td>
+                    <td style={{ padding: "8px" }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 6px",
+                          borderRadius: "3px",
+                          fontSize: "11px",
+                          fontWeight: "bold",
+                          backgroundColor: entry.consentActive
+                            ? "#bbf7d0"
+                            : "#fecaca",
+                          color: entry.consentActive ? "#166534" : "#991b1b",
+                        }}
+                      >
+                        {entry.consentActive ? "✓ Verified" : "✗ Not Found"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px", fontFamily: "monospace" }}>
+                      {entry.idHash.substring(0, 8)}...
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
