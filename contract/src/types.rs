@@ -59,7 +59,29 @@ pub struct ConsentRecord {
   pub is_active: bool,
 }
 
-/// Represents a recipient on the organ transplant waitlist
+/// Represents a hospital in the Lifemarq network
+/// 
+/// Hospitals must register and be verified before they can query donor consent records.
+/// This creates an access control layer that ensures only credentialed medical institutions
+/// can access the system.
+#[derive(Clone)]
+#[contracttype]
+pub struct HospitalRecord {
+    /// Unique hospital identifier (e.g., "hospital-001", "knh-nairobi")
+    pub hospital_id: String,
+    /// Wallet address that signs queries
+    pub wallet: Address,
+    /// Hospital display name
+    pub name: String,
+    /// Country code (ISO 3166-1 alpha-2, e.g., "KE", "DRC", "SN")
+    pub country: String,
+    /// Health ministry license or registration number
+    pub license_number: String,
+    /// Whether this hospital is verified and can query records
+    pub is_verified: bool,
+    /// Registration timestamp
+    pub registered_at: u64,
+}
 /// 
 /// Data capture only in v1 — no matching logic yet.
 /// Records supply and demand for capacity planning.
@@ -93,6 +115,8 @@ pub enum DataKey {
     Consent(String),
     /// Keyed by recipient_id_hash (SHA-256 hex string)
     Recipient(String),
+    /// Keyed by hospital_id (e.g., "hospital-001")
+    Hospital(String),
 }
 
 /// Explicit consent state for clarity in state machine transitions

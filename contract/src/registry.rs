@@ -1,5 +1,5 @@
 use soroban_sdk::{Address, Env, String, Vec, symbol_short};
-use crate::types::{ConsentRecord, DataKey, ContractError};
+use crate::types::{ConsentRecord, DataKey, ContractError, HospitalRecord};
 
 /// Core registry logic for Lifemarq
 /// 
@@ -202,4 +202,94 @@ impl Registry {
             .get::<_, u32>(&key)
             .unwrap_or(0)
     }
-}
+
+    /// Register a hospital to the network
+    /// 
+    /// Hospitals must register before they can query consent records.
+    /// Registration does not grant immediate access — hospital must be verified by admin.
+    pub fn register_hospital(
+        env: &Env,
+        hospital_id: String,
+        wallet: Address,
+        name: String,
+        country: String,
+        license_number: String,
+    ) -> Result<(), ContractError> {
+        // Check if already registered
+        let key = DataKey::Hospital(hospital_id.clone());
+        if env.storage().persistent().has(&key) {
+            return Err(ContractError::AlreadyRegistered);
+        }
+
+        // Create hospital record (not yet verified)
+        let hospital = HospitalRecord {
+            hospital_id: hospital_id.clone(),
+            wallet: wallet.clone(),
+            name,
+            country,
+            license_number,
+            is_verified: false, // Require admin verification
+            registered_at: env.ledger().timestamp(),
+        };
+
+        // Store in ledger
+        env.storage().persistent().set(&key, &hospital);
+
+        // Emit registration event
+        env.events().publish(
+            (symbol_short!("lifemarq"), symbol_short!("hospital_reg")),
+            (hospital_id.clone(), wallet.clone()),
+        );
+
+        Ok(())
+    }
+
+    /// Verify a hospital's credentials (admin only)
+    /// 
+    /// Marks a hospital as verified, enabling full query access.
+    /// In production, only contract admin can call this.
+    pub fn verify_hospital(env: &Env, hospital_id: String) -> Result<(), ContractError> {
+        let key = DataKey::Hospital(hospital_id.clone());
+
+        // Fetch existing record
+        let mut hospital = env
+            .storage()
+            .persistent()
+            .get::<_, HospitalRecord>(&key)
+            .ok_or(ContractError::NotFound)?;
+
+        // Mark as verified
+        hospital.is_verified = true;
+
+        // Update record
+        env.storage().persistent().set(&key, &hospital);
+
+        // Emit verification event
+        env.events().publish(
+            (symbol_short!("lifemarq"), symbol_short!("hospital_verified")),
+            (hospital_id.clone(), hospital.country),
+        );
+
+        Ok(())
+    }
+
+    /// Check if a hospital is verified
+    /// 
+    /// Returns true only if:
+    /// 1. Hospital record exists
+    /// 2. is_verified == true
+    /// 
+    /// Public endpoint - no auth required (enables hospitals to check their own status)
+    pub fn is_hospital_verified(env: &Env, hospital_id: String) -> bool {
+        let key = DataKey::Hospital(hospital_id);
+        match env.storage().persistent().get::<_, HospitalRecord>(&key) {
+            Some(hospital) => hospital.is_verified,
+            None => false,
+        }
+    }
+
+    /// Get hospital details (public read)
+    pub fn get_hospital(env: &Env, hospital_id: String) -> Option<HospitalRecord> {
+        let key = DataKey::Hospital(hospital_id);
+        env.storage().persistent().get(&key)
+    }

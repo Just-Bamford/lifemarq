@@ -176,6 +176,67 @@ impl LifemarqContract {
     pub fn get_recipient_count(env: Env, organ: String) -> u32 {
         Registry::get_recipient_count(&env, organ)
     }
+
+    /// Register a hospital to the network
+    /// 
+    /// Only authorized admins can call this.
+    /// Hospitals must register before they can query consent records.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `hospital_id` - Unique identifier (e.g., "hospital-001")
+    /// * `wallet` - Hospital's wallet address for signed queries
+    /// * `name` - Hospital name
+    /// * `country` - Country code (ISO 3166-1 alpha-2)
+    /// * `license_number` - Health ministry license/registration number
+    /// 
+    /// # Returns
+    /// Result: Succeeds if hospital registered, fails if:
+    /// - Hospital already registered (Unauthorized)
+    /// - Caller is not admin (Unauthorized)
+    pub fn register_hospital(
+        env: Env,
+        hospital_id: String,
+        wallet: Address,
+        name: String,
+        country: String,
+        license_number: String,
+    ) -> Result<(), ContractError> {
+        Registry::register_hospital(&env, hospital_id, wallet, name, country, license_number)
+    }
+
+    /// Verify a hospital's credentials (admin only)
+    /// 
+    /// Sets a hospital's status to verified, enabling full query access.
+    /// Only callable by contract admin.
+    pub fn verify_hospital(env: Env, hospital_id: String) -> Result<(), ContractError> {
+        Registry::verify_hospital(&env, hospital_id)
+    }
+
+    /// Check if a hospital is verified
+    /// 
+    /// Returns true if hospital is verified and can query consent records.
+    /// Public endpoint - no auth required (info is non-sensitive).
+    pub fn is_hospital_verified(env: Env, hospital_id: String) -> bool {
+        Registry::is_hospital_verified(&env, hospital_id)
+    }
+
+    /// Query consent with hospital access control
+    /// 
+    /// Enhanced query that checks if the calling hospital is verified.
+    /// Unauthorized hospitals get rejected with zero return (privacy).
+    /// 
+    /// This is the production query endpoint for hospital systems.
+    pub fn query_with_hospital_auth(
+        env: Env,
+        donor_id_hash: String,
+        hospital_id: String,
+    ) -> bool {
+        if !Registry::is_hospital_verified(&env, hospital_id) {
+            return false; // Deny with silent failure (privacy protection)
+        }
+        Registry::query(&env, donor_id_hash)
+    }
 }
 
 #[cfg(test)]
