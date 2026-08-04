@@ -1,0 +1,24 @@
+name: API CI
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: cd api && npm install
+
+      - name: Build API
+        run: cd api && npm run build
+
+      - name: Run tests
+        run: cd api && npm test

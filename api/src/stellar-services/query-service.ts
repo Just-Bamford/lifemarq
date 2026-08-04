@@ -35,7 +35,7 @@ export class QueryService {
   private contractId: string;
   private networkConfig: StellarNetworkConfig;
   private horizonClient: Horizon.Server;
-  private sorobanClient: SorobanRpc.Client;
+  private sorobanClient: SorobanRpc.Server;
   private resilienceService: ResilienceService;
   private sourceAccount: Horizon.AccountResponse | null = null;
 
@@ -44,9 +44,8 @@ export class QueryService {
     this.networkConfig = networkConfig;
 
     this.horizonClient = new Horizon.Server(networkConfig.horizonUrl);
-    this.sorobanClient = new SorobanRpc.Client({
+    this.sorobanClient = new SorobanRpc.Server(networkConfig.sorobanUrl, {
       allowHttp: false,
-      serverURL: networkConfig.sorobanUrl,
     });
 
     // Initialize resilience service with retry + circuit breaker
@@ -96,8 +95,8 @@ export class QueryService {
         }
 
         // Parse boolean result
-        if (result.switch?.() === xdr.ScValType.scvTypeBool()) {
-          return result.b?.() || false;
+        if (result.b !== undefined) {
+          return result.b() || false;
         }
 
         return false;
@@ -216,14 +215,18 @@ export class QueryService {
    */
   private parseConsentRecord(xdrValue: any): ConsentRecord | null {
     try {
-      // Handle Option/None type
-      if (xdrValue.switch?.() === xdr.ScValType.scvTypeVoid()) {
+      // Handle Option/None type - check if void/null
+      const resultType = xdrValue.switch?.();
+      const typeStr = resultType?.toString?.() || "";
+
+      // If type is void (0), return null
+      if (typeStr === "0" || xdrValue.innerValue?.() === null) {
         return null;
       }
 
       // Handle struct as map
-      if (xdrValue.switch?.() === xdr.ScValType.scvTypeMap()) {
-        const map = xdrValue.map?.();
+      if (xdrValue.map) {
+        const map = xdrValue.map();
         if (!map) return null;
 
         const fields: Record<string, any> = {};

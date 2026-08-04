@@ -60,13 +60,8 @@ function createIntegrationTestApp() {
         });
       }
 
-      // Mock contract interaction
-      const result = await consentService.registerConsent({
-        idHash,
-        wallet,
-        organs,
-      });
-
+      // Note: ConsentService doesn't have registerConsent method
+      // Registration happens via signed Soroban transaction from frontend
       res.json({
         status: "registered",
         idHash,
@@ -122,9 +117,8 @@ function createIntegrationTestApp() {
         });
       }
 
-      // Mock contract interaction
-      const result = await consentService.revokeConsent({ idHash: id_hash });
-
+      // Note: ConsentService doesn't have revokeConsent method
+      // Revocation happens via signed Soroban transaction from frontend
       res.json({
         status: "revoked",
         idHash: id_hash,

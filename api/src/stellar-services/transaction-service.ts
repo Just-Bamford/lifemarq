@@ -50,7 +50,8 @@ export class TransactionService {
    * @returns XDR string representation
    */
   serializeTransaction(transaction: Transaction): string {
-    return transaction.toEnvelope().toXDR();
+    const xdr = transaction.toEnvelope().toXDR() as any;
+    return typeof xdr === "string" ? xdr : xdr.toString("hex");
   }
 
   /**
@@ -60,7 +61,7 @@ export class TransactionService {
    * @returns Transaction object
    */
   deserializeTransaction(xdr: string): Transaction {
-    const envelope = Transaction.fromXDR(
+    const envelope = (Transaction as any).fromXDR(
       xdr,
       this.networkConfig.networkPassphrase,
     );
