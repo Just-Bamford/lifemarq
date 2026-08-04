@@ -266,7 +266,7 @@ impl Registry {
 
         // Emit verification event
         env.events().publish(
-            (symbol_short!("lifemarq"), symbol_short!("hosp_verify")),
+            (symbol_short!("lifemarq"), symbol_short!("hosp_vfy")),
             (hospital_id.clone(), hospital.country),
         );
 
