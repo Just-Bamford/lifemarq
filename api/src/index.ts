@@ -13,6 +13,7 @@ import {
   ConfirmationStatus,
 } from "./confirmation-tracker";
 import { VerificationService } from "./verification-service";
+import { AnalyticsService } from "./analytics-service";
 import {
   rbacMiddleware,
   requirePermission,
@@ -42,6 +43,7 @@ if (!contractId) {
 const stellarClient = new StellarClient(contractId, network);
 const consentService = new ConsentService(stellarClient);
 const verificationService = new VerificationService(consentService);
+const analyticsService = new AnalyticsService();
 
 /**
  * GET /health
@@ -560,6 +562,63 @@ app.get(
 );
 
 /**
+ * GET /analytics
+ * Get comprehensive analytics data for ministry dashboard
+ *
+ * Returns aggregated metrics on:
+ * - Donor registrations and trends
+ * - Organ distribution
+ * - Hospital verification volume
+ * - System health
+ *
+ * Status Codes:
+ * - 200: Analytics data retrieved
+ */
+app.get("/analytics", (req: Request, res: Response) => {
+  try {
+    const analytics = analyticsService.getAnalytics();
+
+    res.json({
+      ...analytics,
+      timestamp: new Date().toISOString(),
+      generated_by: "Lifemarq Analytics Service v1.0",
+    });
+  } catch (error: any) {
+    console.error("Error retrieving analytics:", error);
+    res.status(500).json({ error: "Failed to retrieve analytics" });
+  }
+});
+
+/**
+ * GET /analytics/hospitals
+ * Get top hospitals by verification volume
+ *
+ * Returns list of hospitals ranked by verification requests
+ * Useful for understanding hospital engagement and capacity planning
+ *
+ * Query Parameters:
+ * - limit: max hospitals to return (default: 10, max: 100)
+ *
+ * Status Codes:
+ * - 200: Hospital rankings retrieved
+ */
+app.get("/analytics/hospitals", (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 100);
+    const topHospitals = analyticsService.getTopHospitals(limit);
+
+    res.json({
+      count: topHospitals.length,
+      hospitals: topHospitals,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error retrieving hospital analytics:", error);
+    res.status(500).json({ error: "Failed to retrieve hospital analytics" });
+  }
+});
+
+/**
  * 404 handler
  */
 app.use((req: Request, res: Response) => {
@@ -583,4 +642,6 @@ app.listen(port, () => {
   console.log(`  POST /verify-donor/:id_hash (hospital verification)`);
   console.log(`  GET /verify/stats (verification statistics)`);
   console.log(`  GET /audit/verifications (audit log - admin only)`);
+  console.log(`  GET /analytics (analytics dashboard)`);
+  console.log(`  GET /analytics/hospitals (top hospitals by volume)`);
 });
