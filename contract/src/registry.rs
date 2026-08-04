@@ -57,7 +57,7 @@ impl Registry {
         // AUDITABILITY: Emit event for blockchain observers
         env.events().publish(
             (symbol_short!("lifemarq"), symbol_short!("register")),
-            (donor_id_hash.as_ref(), &wallet, env.ledger().timestamp()),
+            (donor_id_hash.clone(), &wallet, env.ledger().timestamp()),
         );
 
         Ok(())
@@ -113,7 +113,7 @@ impl Registry {
         // AUDITABILITY: Emit event for blockchain observers
         env.events().publish(
             (symbol_short!("lifemarq"), symbol_short!("revoke")),
-            (donor_id_hash.as_ref(), &wallet, env.ledger().timestamp()),
+            (donor_id_hash.clone(), &wallet, env.ledger().timestamp()),
         );
 
         Ok(())
@@ -171,7 +171,7 @@ impl Registry {
         // Emit registration event for audit trail
         env.events().publish(
             (symbol_short!("lifemarq"), symbol_short!("recipient")),
-            (recipient_id_hash.as_ref(), wallet.clone()),
+            (recipient_id_hash.clone(), wallet.clone()),
         );
 
         // In v1, we don't prevent duplicate waitlist entries (allow reregistration)

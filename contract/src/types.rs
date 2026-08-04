@@ -113,8 +113,8 @@ pub enum ConsentState {
 /// 2. NotFound - record does not exist (query returned empty)
 /// 3. AlreadyRevoked - revocation blocked (immutability check)
 /// 4. Unauthorized - caller not authorized (security check)
-#[derive(soroban_sdk::contracterror)]
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[soroban_sdk::contracterror]
 pub enum ContractError {
     /// Donor already registered with this hash (duplicate registration blocked)
     /// State: ACTIVE or REVOKED record exists
