@@ -273,6 +273,154 @@ export default function DonorPortal() {
     setMessage("");
   };
 
+  const handleRevoke = async () => {
+    if (!wallet) {
+      setMessage("Please connect your wallet first");
+      setMessageType("error");
+      return;
+    }
+
+    if (!nationalId.trim()) {
+      setMessage("Please enter your national ID");
+      setMessageType("error");
+      return;
+    }
+
+    setError(null);
+    setState("submitting");
+    setMessage("Preparing revocation...");
+
+    try {
+      // Hash national ID
+      const idHash = await hashNationalId(nationalId);
+
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+      const network = process.env.NEXT_PUBLIC_NETWORK || "testnet";
+
+      if (!contractId) {
+        throw {
+          code: "CONFIG_ERROR",
+          message: "Contract ID not configured",
+          recoverable: false,
+        };
+      }
+
+      // Create contract instance
+      const contract = new Contract(contractId);
+
+      // Build revocation transaction
+      setState("submitting");
+      setMessage("Building revocation transaction...");
+      const sourceAccount = {
+        accountId: wallet,
+        sequenceNumber: "0",
+      };
+
+      const transaction = new TransactionBuilder(sourceAccount as any, {
+        fee: "100",
+        networkPassphrase:
+          network === "testnet"
+            ? Networks.TESTNET_NETWORK_PASSPHRASE
+            : Networks.PUBLIC_NETWORK_PASSPHRASE,
+      })
+        .addOperation(
+          contract.call(
+            "revoke",
+            nativeToScVal(idHash, { type: "string" }),
+            nativeToScVal(wallet, { type: "address" }),
+          ),
+        )
+        .setTimeout(30)
+        .build();
+
+      const xdr = transaction.toXDR();
+
+      // Sign with Freighter
+      setState("signing");
+      setMessage("Waiting for your wallet to sign revocation...");
+      const signedXdr = await signTransaction(xdr, network);
+
+      // Submit to Soroban RPC
+      const sorobanUrl =
+        network === "testnet"
+          ? "https://soroban-testnet.stellar.org"
+          : "https://soroban.stellar.org";
+
+      const sorobanClient = new SorobanRpc.Client({
+        allowHttp: false,
+        serverURL: sorobanUrl,
+      });
+
+      setState("confirming");
+      setMessage("Submitting revocation to blockchain...");
+      const signedTx = TransactionBuilder.fromXDR(
+        signedXdr,
+        network === "testnet"
+          ? Networks.TESTNET_NETWORK_PASSPHRASE
+          : Networks.PUBLIC_NETWORK_PASSPHRASE,
+      );
+
+      const result = await sorobanClient.sendTransaction(signedTx);
+
+      if (result.status === "PENDING") {
+        // Poll for completion
+        let pollCount = 0;
+        while (pollCount < 30) {
+          setState("confirming");
+          setMessage(
+            `Confirming revocation on blockchain (${pollCount + 1}/30 attempts)...`,
+          );
+          const status = await sorobanClient.getTransaction(result.hash);
+          if (status.status === "SUCCESS") {
+            setState("success");
+            setMessage(
+              "✓ Revocation successful! Your consent has been permanently revoked.",
+            );
+            setMessageType("success");
+            setNationalId("");
+            return;
+          } else if (status.status === "FAILED") {
+            throw {
+              code: "TX_FAILED",
+              message: "Revocation transaction was rejected by the blockchain",
+              recoverable: false,
+            };
+          }
+          pollCount++;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        throw {
+          code: "TX_TIMEOUT",
+          message: "Revocation confirmation timeout",
+          recoverable: true,
+        };
+      } else if (result.status === "SUCCESS") {
+        setState("success");
+        setMessage(
+          "✓ Revocation successful! Your consent has been permanently revoked.",
+        );
+        setMessageType("success");
+        setNationalId("");
+      } else {
+        throw {
+          code: "TX_FAILED",
+          message: `Revocation failed with status: ${result.status}`,
+          recoverable: false,
+        };
+      }
+    } catch (error: any) {
+      setState("error");
+      const errorCode = error.code || "REVOCATION_FAILED";
+      setError({
+        code: errorCode,
+        message: error.message || "Revocation failed",
+        recoverable: error.recoverable !== false,
+      });
+      setMessage(error.message || "Revocation failed");
+      setMessageType("error");
+    }
+  };
+
   if (state === "success" && successData) {
     // Generate QR code when success state is reached
     useEffect(() => {
@@ -525,6 +673,34 @@ export default function DonorPortal() {
                 "Register & Sign with Freighter"}
             </button>
           </>
+        )}
+      </div>
+
+      {/* Revocation Section */}
+      <div className="card">
+        <h3>Revoke Your Consent</h3>
+        <p>
+          If you change your mind, you can revoke your organ donation consent at
+          any time. This action is permanent and cannot be undone. A new
+          registration would be required to re-enable donation.
+        </p>
+        {wallet ? (
+          <button
+            onClick={handleRevoke}
+            disabled={state !== "idle" && state !== "error"}
+            style={{
+              backgroundColor: "#dc3545",
+            }}
+          >
+            {state === "submitting" && "Revoking..."}
+            {state === "signing" && "Signing revocation..."}
+            {state === "confirming" && "Confirming revocation..."}
+            {(state === "idle" || state === "error") && "Revoke Consent"}
+          </button>
+        ) : (
+          <p style={{ color: "#666", fontSize: "14px" }}>
+            Connect your wallet first to revoke consent
+          </p>
         )}
       </div>
 

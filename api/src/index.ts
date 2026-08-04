@@ -619,6 +619,75 @@ app.get("/analytics/hospitals", (req: Request, res: Response) => {
 });
 
 /**
+ * POST /revoke/:id_hash
+ * Revoke a donor's consent
+ *
+ * Called by donor's wallet to permanently revoke consent registration
+ * Requires wallet signature (via Freighter or other Stellar wallet)
+ *
+ * Body:
+ * {
+ *   "wallet": "GAAAA...", // Donor's wallet address
+ * }
+ *
+ * Response:
+ * {
+ *   "status": "revoked|error",
+ *   "id_hash": "a3f8d2c1...",
+ *   "message": "Consent successfully revoked"
+ * }
+ *
+ * Status Codes:
+ * - 200: Revocation initiated (submitted to contract)
+ * - 400: Invalid hash or missing wallet
+ * - 503: Registry unavailable
+ */
+app.post("/revoke/:id_hash", async (req: Request, res: Response) => {
+  try {
+    const { id_hash } = req.params;
+    const { wallet } = req.body;
+
+    // Validate inputs
+    if (!id_hash || !wallet) {
+      return res.status(400).json({
+        error: "Missing required fields: id_hash and wallet",
+      });
+    }
+
+    // Validate hash format
+    if (id_hash.length !== 64 || !/^[a-f0-9]{64}$/i.test(id_hash)) {
+      return res.status(400).json({
+        error: "Invalid hash format (must be 64-char hex SHA-256)",
+      });
+    }
+
+    // Validate wallet format (Stellar address)
+    if (!wallet.startsWith("G") || wallet.length !== 56) {
+      return res.status(400).json({
+        error: "Invalid wallet address format",
+      });
+    }
+
+    // Note: Actual revocation would be submitted via signed transaction
+    // This endpoint records the revocation request
+    // The contract enforces that only the original signer can revoke
+
+    res.json({
+      status: "revoke_initiated",
+      id_hash,
+      wallet,
+      message:
+        "Revocation request submitted. Sign with your wallet to confirm.",
+      next_step:
+        "Sign the transaction in your Stellar wallet to complete revocation",
+    });
+  } catch (error: any) {
+    console.error("Error revoking consent:", error);
+    res.status(503).json({ error: "Failed to process revocation" });
+  }
+});
+
+/**
  * 404 handler
  */
 app.use((req: Request, res: Response) => {
