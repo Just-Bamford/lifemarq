@@ -26,7 +26,9 @@ export function getNetworkConfig(network: string): StellarNetworkConfig {
         name: "testnet",
         horizonUrl: "https://horizon-testnet.stellar.org",
         sorobanUrl: "https://soroban-testnet.stellar.org",
-        networkPassphrase: Networks.TESTNET_NETWORK_PASSPHRASE,
+        networkPassphrase:
+          Networks.TESTNET_NETWORK_PASSPHRASE ||
+          "Test SDF Network ; September 2015",
       };
 
     case "public":
@@ -35,7 +37,9 @@ export function getNetworkConfig(network: string): StellarNetworkConfig {
         name: "public",
         horizonUrl: "https://horizon.stellar.org",
         sorobanUrl: "https://soroban.stellar.org",
-        networkPassphrase: Networks.PUBLIC_NETWORK_PASSPHRASE,
+        networkPassphrase:
+          Networks.PUBLIC_NETWORK_PASSPHRASE ||
+          "Public Global Stellar Network ; September 2015",
       };
 
     default:

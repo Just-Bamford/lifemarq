@@ -96,8 +96,8 @@ export class QueryService {
         }
 
         // Parse boolean result
-        if (result.switch() === xdr.SCValType.scvTypeBool()) {
-          return result.b()?.valueOf() || false;
+        if (result.switch?.() === xdr.ScValType.scvTypeBool()) {
+          return result.b?.() || false;
         }
 
         return false;
@@ -214,44 +214,44 @@ export class QueryService {
    * - registered_at: u64
    * - is_active: bool
    */
-  private parseConsentRecord(xdrValue: xdr.SCVal): ConsentRecord | null {
+  private parseConsentRecord(xdrValue: any): ConsentRecord | null {
     try {
       // Handle Option/None type
-      if (xdrValue.switch() === xdr.SCValType.scvTypeVoid()) {
+      if (xdrValue.switch?.() === xdr.ScValType.scvTypeVoid()) {
         return null;
       }
 
       // Handle struct as map
-      if (xdrValue.switch() === xdr.SCValType.scvTypeMap()) {
-        const map = xdrValue.map();
+      if (xdrValue.switch?.() === xdr.ScValType.scvTypeMap()) {
+        const map = xdrValue.map?.();
         if (!map) return null;
 
         const fields: Record<string, any> = {};
 
         // Parse map entries
-        for (const entry of map.sc_map_entries()) {
-          const keyVal = entry.key();
-          const key = keyVal.sym()?.toString() || "";
-          const val = entry.val();
+        for (const entry of map.sc_map_entries?.() || []) {
+          const keyVal = entry.key?.();
+          const key = keyVal?.sym?.()?.toString() || "";
+          const val = entry.val?.();
 
           if (key === "donor_id_hash") {
-            fields.donorIdHash = val.str()?.toString() || "";
+            fields.donorIdHash = val?.str?.()?.toString() || "";
           } else if (key === "wallet") {
-            const addr = val.address();
-            if (addr?.accountId()) {
+            const addr = val?.address?.();
+            if (addr?.accountId?.()) {
               fields.wallet = addr.accountId()?.toString() || "";
-            } else if (addr?.contractId()) {
+            } else if (addr?.contractId?.()) {
               fields.wallet = addr.contractId()?.toString() || "";
             }
           } else if (key === "organs") {
-            const vec = val.vec();
+            const vec = val?.vec?.();
             fields.organs = vec
-              ? vec.map((v) => v.str()?.toString() || "")
+              ? vec.map((v: any) => v.str?.()?.toString() || "")
               : [];
           } else if (key === "registered_at") {
-            fields.registeredAt = Number(val.u64()?.toString() || "0");
+            fields.registeredAt = Number(val?.u64?.()?.toString() || "0");
           } else if (key === "is_active") {
-            fields.isActive = val.b() || false;
+            fields.isActive = val?.b?.() || false;
           }
         }
 

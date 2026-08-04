@@ -305,12 +305,12 @@ app.get("/submission/:tx_hash/confirm", async (req: Request, res: Response) => {
     // Update confirmation status based on current state
     // In production, would also check Horizon for actual tx confirmation
     const expectedActive = submission.operation === "register" ? true : false;
-    const isConfirmed = consentActive === expectedActive;
+    const isConfirmed = consentActive.isConsented === expectedActive;
 
     confirmationTracker.updateStatus(
       tx_hash,
       isConfirmed ? ConfirmationStatus.CONFIRMED : ConfirmationStatus.PENDING,
-      consentActive,
+      consentActive.isConsented,
     );
 
     const confirmation = confirmationTracker.getStatus(tx_hash);
