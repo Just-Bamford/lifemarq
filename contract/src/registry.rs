@@ -1,5 +1,5 @@
 use soroban_sdk::{Address, Env, String, Vec, symbol_short};
-use crate::types::{ConsentRecord, DataKey, ContractError, ConsentState};
+use crate::types::{ConsentRecord, DataKey, ContractError};
 
 /// Core registry logic for Lifemarq
 /// 
@@ -57,7 +57,7 @@ impl Registry {
         // AUDITABILITY: Emit event for blockchain observers
         env.events().publish(
             (symbol_short!("lifemarq"), symbol_short!("register")),
-            (&donor_id_hash, &wallet, env.ledger().timestamp()),
+            (donor_id_hash.as_ref(), &wallet, env.ledger().timestamp()),
         );
 
         Ok(())
@@ -113,7 +113,7 @@ impl Registry {
         // AUDITABILITY: Emit event for blockchain observers
         env.events().publish(
             (symbol_short!("lifemarq"), symbol_short!("revoke")),
-            (&donor_id_hash, &wallet, env.ledger().timestamp()),
+            (donor_id_hash.as_ref(), &wallet, env.ledger().timestamp()),
         );
 
         Ok(())
@@ -171,21 +171,16 @@ impl Registry {
         // Emit registration event for audit trail
         env.events().publish(
             (symbol_short!("lifemarq"), symbol_short!("recipient")),
-            (recipient_id_hash.clone(), wallet.clone()),
+            (recipient_id_hash.as_ref(), wallet.clone()),
         );
 
         // In v1, we don't prevent duplicate waitlist entries (allow reregistration)
         // Production would implement proper waitlist management
 
-        // Store recipient record
-        let key = String::from_small_str(&format!(
-            "recipient:{}",
-            recipient_id_hash.clone()
-        ));
-        
         // For v1, store just the organ count as a counter
         for organ in needed_organs {
-            let organ_key = String::from_small_str(&format!("waitlist:{}", organ));
+            // Increment counter for this organ
+            let organ_key = DataKey::Recipient(organ);
             let current = env
                 .storage()
                 .persistent()
@@ -201,7 +196,7 @@ impl Registry {
 
     /// Get the number of recipients waiting for a specific organ
     pub fn get_recipient_count(env: &Env, organ: String) -> u32 {
-        let key = String::from_small_str(&format!("waitlist:{}", organ));
+        let key = DataKey::Recipient(organ);
         env.storage()
             .persistent()
             .get::<_, u32>(&key)
