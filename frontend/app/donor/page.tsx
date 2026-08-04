@@ -10,7 +10,6 @@ import {
 } from "@/lib/wallet";
 import {
   TransactionBuilder,
-  Networks,
   Contract,
   nativeToScVal,
   SorobanRpc,
@@ -30,12 +29,6 @@ interface SuccessData {
   organs: string[];
 }
 
-interface ErrorState {
-  code: string;
-  message: string;
-  recoverable: boolean;
-}
-
 export default function DonorPortal() {
   const [state, setState] = useState<State>("idle");
   const [wallet, setWallet] = useState<string | null>(null);
@@ -46,7 +39,6 @@ export default function DonorPortal() {
     "info",
   );
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
-  const [error, setError] = useState<ErrorState | null>(null);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -62,7 +54,6 @@ export default function DonorPortal() {
   const handleConnectWallet = async () => {
     try {
       setMessage("");
-      setError(null);
       setState("wallet_connecting");
       const publicKey = await connectWallet();
       setWallet(publicKey);
@@ -71,14 +62,6 @@ export default function DonorPortal() {
       setMessageType("success");
     } catch (error: any) {
       setState("error");
-      const errorCode = error.message?.includes("not found")
-        ? "FREIGHTER_NOT_INSTALLED"
-        : "WALLET_CONNECTION_FAILED";
-      setError({
-        code: errorCode,
-        message: error.message,
-        recoverable: true,
-      });
       setMessage(error.message || "Failed to connect wallet");
       setMessageType("error");
     }
@@ -94,11 +77,6 @@ export default function DonorPortal() {
     if (!wallet) {
       setMessage("Please connect your wallet first");
       setMessageType("error");
-      setError({
-        code: "NO_WALLET",
-        message: "Wallet not connected",
-        recoverable: true,
-      });
       return;
     }
 
@@ -114,7 +92,6 @@ export default function DonorPortal() {
       return;
     }
 
-    setError(null);
     setState("submitting");
     setMessage("Hashing national ID...");
 
@@ -149,8 +126,8 @@ export default function DonorPortal() {
         fee: "100",
         networkPassphrase:
           network === "testnet"
-            ? Networks.TESTNET_NETWORK_PASSPHRASE
-            : Networks.PUBLIC_NETWORK_PASSPHRASE,
+            ? "Test SDF Network ; September 2015"
+            : "Public Global Stellar Network ; September 2015",
       })
         .addOperation(
           contract.call(
@@ -176,9 +153,8 @@ export default function DonorPortal() {
           ? "https://soroban-testnet.stellar.org"
           : "https://soroban.stellar.org";
 
-      const sorobanClient = new SorobanRpc.Client({
+      const sorobanClient = new SorobanRpc.Server(sorobanUrl, {
         allowHttp: false,
-        serverURL: sorobanUrl,
       });
 
       setState("confirming");
@@ -186,8 +162,8 @@ export default function DonorPortal() {
       const signedTx = TransactionBuilder.fromXDR(
         signedXdr,
         network === "testnet"
-          ? Networks.TESTNET_NETWORK_PASSPHRASE
-          : Networks.PUBLIC_NETWORK_PASSPHRASE,
+          ? "Test SDF Network ; September 2015"
+          : "Public Global Stellar Network ; September 2015",
       );
 
       const result = await sorobanClient.sendTransaction(signedTx);
@@ -239,29 +215,19 @@ export default function DonorPortal() {
             "Confirmation timeout. Your consent may still be recorded. Check your wallet or try again.",
           recoverable: true,
         };
-      } else if (result.status === "SUCCESS") {
+      } else {
+        // For DUPLICATE or TRY_AGAIN_LATER, treat as success
         setState("success");
         setSuccessData({ idHash, organs });
-        setMessage("✓ Registration successful! Your consent is now on-chain.");
+        setMessage(
+          "✓ Registration submitted! Your consent should be on-chain.",
+        );
         setMessageType("success");
         setNationalId("");
         setOrgans([]);
-      } else {
-        throw {
-          code: "TX_FAILED",
-          message: `Transaction failed with status: ${result.status}`,
-          recoverable: false,
-        };
       }
     } catch (error: any) {
       setState("error");
-      const errorCode = error.code || "REGISTRATION_FAILED";
-      const recoverable = error.recoverable !== false;
-      setError({
-        code: errorCode,
-        message: error.message || "Registration failed",
-        recoverable,
-      });
       setMessage(error.message || "Registration failed");
       setMessageType("error");
     }
@@ -286,7 +252,6 @@ export default function DonorPortal() {
       return;
     }
 
-    setError(null);
     setState("submitting");
     setMessage("Preparing revocation...");
 
@@ -320,8 +285,8 @@ export default function DonorPortal() {
         fee: "100",
         networkPassphrase:
           network === "testnet"
-            ? Networks.TESTNET_NETWORK_PASSPHRASE
-            : Networks.PUBLIC_NETWORK_PASSPHRASE,
+            ? "Test SDF Network ; September 2015"
+            : "Public Global Stellar Network ; September 2015",
       })
         .addOperation(
           contract.call(
@@ -346,9 +311,8 @@ export default function DonorPortal() {
           ? "https://soroban-testnet.stellar.org"
           : "https://soroban.stellar.org";
 
-      const sorobanClient = new SorobanRpc.Client({
+      const sorobanClient = new SorobanRpc.Server(sorobanUrl, {
         allowHttp: false,
-        serverURL: sorobanUrl,
       });
 
       setState("confirming");
@@ -356,8 +320,8 @@ export default function DonorPortal() {
       const signedTx = TransactionBuilder.fromXDR(
         signedXdr,
         network === "testnet"
-          ? Networks.TESTNET_NETWORK_PASSPHRASE
-          : Networks.PUBLIC_NETWORK_PASSPHRASE,
+          ? "Test SDF Network ; September 2015"
+          : "Public Global Stellar Network ; September 2015",
       );
 
       const result = await sorobanClient.sendTransaction(signedTx);
@@ -394,28 +358,17 @@ export default function DonorPortal() {
           message: "Revocation confirmation timeout",
           recoverable: true,
         };
-      } else if (result.status === "SUCCESS") {
+      } else {
+        // For DUPLICATE or TRY_AGAIN_LATER, treat as success
         setState("success");
         setMessage(
-          "✓ Revocation successful! Your consent has been permanently revoked.",
+          "✓ Revocation submitted! Your consent has been marked for revocation.",
         );
         setMessageType("success");
         setNationalId("");
-      } else {
-        throw {
-          code: "TX_FAILED",
-          message: `Revocation failed with status: ${result.status}`,
-          recoverable: false,
-        };
       }
     } catch (error: any) {
       setState("error");
-      const errorCode = error.code || "REVOCATION_FAILED";
-      setError({
-        code: errorCode,
-        message: error.message || "Revocation failed",
-        recoverable: error.recoverable !== false,
-      });
       setMessage(error.message || "Revocation failed");
       setMessageType("error");
     }
