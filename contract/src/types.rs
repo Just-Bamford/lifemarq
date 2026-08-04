@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, String, Vec};
+use soroban_sdk::{contracttype, contracterror, Address, String, Vec};
 
 /// Represents a donor's consent record on-chain
 /// 
@@ -114,7 +114,7 @@ pub enum ConsentState {
 /// 3. AlreadyRevoked - revocation blocked (immutability check)
 /// 4. Unauthorized - caller not authorized (security check)
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[soroban_sdk::contracterror]
+#[contracterror]
 pub enum ContractError {
     /// Donor already registered with this hash (duplicate registration blocked)
     /// State: ACTIVE or REVOKED record exists
