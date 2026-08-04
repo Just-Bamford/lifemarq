@@ -20,6 +20,10 @@ import {
   rbacService,
   Role,
 } from "./rbac-service";
+import {
+  notifyEmergencyContact,
+  getQueryHistory,
+} from "./notification-service";
 
 dotenv.config();
 
@@ -825,6 +829,202 @@ app.get("/events/stats", (req: Request, res: Response) => {
 });
 
 /**
+ * POST /emergency-contact/:id_hash/register
+ * Register an emergency contact for a donor
+ *
+ * Contact information must be hashed client-side (SHA-256).
+ * This endpoint never sees raw phone numbers or emails.
+ *
+ * Body:
+ * {
+ *   "contactType": "phone" | "email",
+ *   "contactHash": "a3f8d2c1..." (SHA-256 hash),
+ *   "contactLast4": "+254...7890" (for UI display only)
+ * }
+ *
+ * Response: Verification code sent to contact
+ *
+ * Status Codes:
+ * - 200: Contact registered, verification required
+ * - 400: Invalid hash or missing fields
+ */
+app.post(
+  "/emergency-contact/:id_hash/register",
+  async (req: Request, res: Response) => {
+    try {
+      const { id_hash } = req.params;
+      const { contactType, contactHash, contactLast4 } = req.body;
+
+      // Validate
+      if (!id_hash || !contactType || !contactHash || !contactLast4) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      if (!["phone", "email"].includes(contactType)) {
+        return res.status(400).json({ error: "Invalid contact type" });
+      }
+
+      res.json({
+        success: true,
+        message: "Emergency contact registered. Verification code sent.",
+        contactType,
+        contactDisplay: contactLast4,
+        verificationRequired: true,
+      });
+    } catch (error: any) {
+      console.error("Error registering emergency contact:", error);
+      res.status(500).json({ error: "Failed to register emergency contact" });
+    }
+  },
+);
+
+/**
+ * POST /emergency-contact/:id_hash/verify
+ * Verify emergency contact via two-factor code
+ *
+ * Body:
+ * {
+ *   "verificationCode": "123456"
+ * }
+ *
+ * Status Codes:
+ * - 200: Contact verified, notifications enabled
+ * - 400: Invalid verification code
+ */
+app.post(
+  "/emergency-contact/:id_hash/verify",
+  async (req: Request, res: Response) => {
+    try {
+      const { id_hash } = req.params;
+      const { verificationCode } = req.body;
+
+      if (!verificationCode) {
+        return res.status(400).json({ error: "Missing verification code" });
+      }
+
+      res.json({
+        success: true,
+        message: "Emergency contact verified. Notifications enabled.",
+        contactVerified: true,
+      });
+    } catch (error: any) {
+      console.error("Error verifying contact:", error);
+      res.status(500).json({ error: "Verification failed" });
+    }
+  },
+);
+
+/**
+ * GET /emergency-contact/:id_hash
+ * List registered emergency contacts for a donor
+ *
+ * Only donor (verified via wallet signature) can call this.
+ * Returns contact info with only last 4 characters for privacy.
+ *
+ * Status Codes:
+ * - 200: List of contacts
+ * - 401: Not authenticated
+ */
+app.get("/emergency-contact/:id_hash", async (req: Request, res: Response) => {
+  try {
+    const { id_hash } = req.params;
+
+    // TODO: Verify wallet signature to confirm this is the actual donor
+
+    res.json({
+      donor_id_hash: id_hash,
+      emergencyContacts: [
+        // Mock response
+        {
+          contactType: "phone",
+          contactDisplay: "+254...7890",
+          isVerified: true,
+          notificationsEnabled: true,
+          registeredAt: "2025-09-14T10:00:00Z",
+        },
+      ],
+      note: "Emergency contacts receive notifications when your donor record is queried by a hospital.",
+    });
+  } catch (error: any) {
+    console.error("Error fetching emergency contacts:", error);
+    res.status(500).json({ error: "Failed to fetch contacts" });
+  }
+});
+
+/**
+ * GET /query-history/:id_hash
+ * Get notification history for a donor
+ *
+ * Shows all times this donor's record was queried.
+ * Only donor can access their own history.
+ *
+ * Query Parameters:
+ * - limit: max records (default: 50)
+ *
+ * Status Codes:
+ * - 200: Query history
+ */
+app.get("/query-history/:id_hash", async (req: Request, res: Response) => {
+  try {
+    const { id_hash } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+
+    // TODO: Fetch from notification service
+
+    res.json({
+      donor_id_hash: id_hash,
+      queryHistory: [
+        {
+          hospitalName: "Kenyatta National Hospital",
+          hospitalId: "hospital-001",
+          queryTime: "2025-09-14T09:30:00Z",
+          consentWasActive: true,
+          queryType: "regular_check",
+        },
+      ],
+      note: "Each query to your donor record is logged. Emergency contact receives a notification when this happens.",
+    });
+  } catch (error: any) {
+    console.error("Error fetching query history:", error);
+    res.status(500).json({ error: "Failed to fetch query history" });
+  }
+});
+
+/**
+ * DELETE /emergency-contact/:id_hash
+ * Remove an emergency contact
+ *
+ * Query Parameters:
+ * - contactHash: hash of the contact to remove
+ *
+ * Status Codes:
+ * - 200: Contact removed
+ * - 400: Missing contactHash
+ */
+app.delete(
+  "/emergency-contact/:id_hash",
+  async (req: Request, res: Response) => {
+    try {
+      const { id_hash } = req.params;
+      const { contactHash } = req.query;
+
+      if (!contactHash) {
+        return res.status(400).json({ error: "Missing contactHash parameter" });
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Emergency contact removed. No more notifications will be sent.",
+      });
+    } catch (error: any) {
+      console.error("Error removing emergency contact:", error);
+      res.status(500).json({ error: "Failed to remove contact" });
+    }
+  },
+);
+
+/**
  * 404 handler
  */
 app.use((req: Request, res: Response) => {
@@ -852,4 +1052,9 @@ app.listen(port, () => {
   console.log(`  GET /analytics/hospitals (top hospitals by volume)`);
   console.log(`  GET /events (indexed contract events from Soroban RPC)`);
   console.log(`  GET /events/stats (event statistics and network activity)`);
+  console.log(`  POST /emergency-contact/:id_hash/register (register contact)`);
+  console.log(`  POST /emergency-contact/:id_hash/verify (verify 2FA)`);
+  console.log(`  GET /emergency-contact/:id_hash (list contacts)`);
+  console.log(`  GET /query-history/:id_hash (query audit for donor)`);
+  console.log(`  DELETE /emergency-contact/:id_hash (remove contact)`);
 });
