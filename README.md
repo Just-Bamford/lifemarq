@@ -11,9 +11,28 @@ Register consent once. Hospitals query instantly. Family cannot override.</p>
   <img src="https://img.shields.io/badge/frontend-Next.js%2014-000000?style=flat-square" alt="Next.js" />
   <img src="https://img.shields.io/badge/status-testnet-F59E0B?style=flat-square" alt="Testnet" />
   <img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT License" />
+  <img src="https://github.com/Just-Bamford/lifemarq/actions/workflows/contract.yml/badge.svg" alt="Contract CI" />
 </p>
 
 </div>
+
+---
+
+## Live Deployment
+
+**Contract ID (Stellar Testnet):**
+
+```
+CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE
+```
+
+**Links:**
+
+- 📱 **Donor Portal:** https://lifemarq.vercel.app
+- 🏥 **Hospital Dashboard:** https://lifemarq.vercel.app/hospital
+- 📊 **Ministry Analytics:** https://lifemarq.vercel.app/ministry
+- 🔗 **Blockchain Explorer:** https://stellar.expert/explorer/testnet/contract/CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE
+- 📡 **API Endpoint:** https://api.lifemarq.io (v1.0.0-testnet)
 
 ---
 
@@ -110,22 +129,26 @@ This will:
 
 ## Testnet Deployment
 
-**Status:** Ready for deployment
+**Status:** ✅ Live on Stellar Testnet (v0.1.0-testnet)
 
-To deploy the contract to Stellar testnet:
+**Contract ID:**
 
-```bash
-./deploy-testnet.sh              # macOS/Linux
-deploy-testnet.bat              # Windows
+```
+CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE
 ```
 
-Once deployed, the contract ID will appear here:
+**Explorer Links:**
 
-**Contract ID:** `[Awaiting deployment]`
+- [Contract on Stellar.Expert](https://stellar.expert/explorer/testnet/contract/CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE)
+- [All Transactions](https://stellar.expert/explorer/testnet/contract/CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE/operations)
 
 **Network:** Stellar Testnet
 
-**Explorer:** https://stellar.expert/explorer/testnet/contract/[CONTRACT_ID]
+**Try it yourself:**
+
+1. [Visit the donor portal](https://lifemarq.vercel.app/donor) with Freighter wallet (testnet)
+2. [Check consent status](https://lifemarq.vercel.app/status/[id_hash]) with any ID hash
+3. [Query via hospital dashboard](https://lifemarq.vercel.app/hospital) to test integration
 
 ---
 
