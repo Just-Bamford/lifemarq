@@ -163,7 +163,7 @@ impl Registry {
         recipient_id_hash: String,
         wallet: Address,
         needed_organs: Vec<String>,
-        blood_type: String,
+        _blood_type: String,
     ) -> Result<(), ContractError> {
         // SECURITY: Require wallet signature
         wallet.require_auth();
@@ -237,7 +237,7 @@ impl Registry {
 
         // Emit registration event
         env.events().publish(
-            (symbol_short!("lifemarq"), symbol_short!("hospital_reg")),
+            (symbol_short!("lifemarq"), symbol_short!("hosp_reg")),
             (hospital_id.clone(), wallet.clone()),
         );
 
@@ -266,7 +266,7 @@ impl Registry {
 
         // Emit verification event
         env.events().publish(
-            (symbol_short!("lifemarq"), symbol_short!("hospital_verified")),
+            (symbol_short!("lifemarq"), symbol_short!("hosp_verify")),
             (hospital_id.clone(), hospital.country),
         );
 
