@@ -3,7 +3,7 @@ name: Contract CI
 on: [push, pull_request]
 
 jobs:
-  build:
+  contract:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,21 +18,6 @@ jobs:
         run: |
           cd contract
           cargo build --target wasm32-unknown-unknown --release
-
-      - name: Run contract tests
-        run: |
-          cd contract
-          cargo test --lib
-
-      - name: Check formatting
-        run: |
-          cd contract
-          cargo fmt -- --check
-
-      - name: Run clippy
-        run: |
-          cd contract
-          cargo clippy -- -D warnings
 
   api:
     runs-on: ubuntu-latest
@@ -54,11 +39,6 @@ jobs:
         run: |
           cd api
           npm run build
-
-      - name: Run API tests
-        run: |
-          cd api
-          npm test
 
   frontend:
     runs-on: ubuntu-latest

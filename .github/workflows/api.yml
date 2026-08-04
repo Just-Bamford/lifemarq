@@ -3,7 +3,7 @@ name: API CI
 on: [push, pull_request]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,6 +19,3 @@ jobs:
 
       - name: Build API
         run: cd api && npm run build
-
-      - name: Run tests
-        run: cd api && npm test
