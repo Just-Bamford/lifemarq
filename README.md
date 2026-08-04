@@ -86,6 +86,49 @@ Donor                         Lifemarq Contract              Hospital
 
 ---
 
+## Quick Start
+
+Deploy the contract to testnet in one command:
+
+```bash
+# macOS/Linux
+./deploy-testnet.sh
+
+# Windows
+deploy-testnet.bat
+```
+
+This will:
+
+1. Build the Rust smart contract to WASM
+2. Deploy to Stellar testnet
+3. Output the contract ID
+4. Generate environment files for API and frontend
+5. Print explorer link so you can verify it's live
+
+---
+
+## Testnet Deployment
+
+**Status:** Ready for deployment
+
+To deploy the contract to Stellar testnet:
+
+```bash
+./deploy-testnet.sh              # macOS/Linux
+deploy-testnet.bat              # Windows
+```
+
+Once deployed, the contract ID will appear here:
+
+**Contract ID:** `[Awaiting deployment]`
+
+**Network:** Stellar Testnet
+
+**Explorer:** https://stellar.expert/explorer/testnet/contract/[CONTRACT_ID]
+
+---
+
 ## Repository Structure
 
 ```
