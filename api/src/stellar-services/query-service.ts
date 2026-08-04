@@ -62,6 +62,66 @@ export class QueryService {
    * @returns true if active, false if not found or revoked
    */
   async queryConsent(idHash: string): Promise<boolean> {
+    return this.resilienceService.executeWithRetry(
+      () => this.performQueryConsent(idHash),
+      `query(${idHash})`,
+    );
+  }
+
+  /**
+   * Perform the actual query call
+   */
+  private async performQueryConsent(idHash: string): Promise<boolean> {
+    try {
+      const sourceAccount = await this.getSourceAccount();
+      const contract = new Contract(this.contractId);
+
+      const transaction = new TransactionBuilder(sourceAccount, {
+        fee: "100",
+        networkPassphrase: this.networkConfig.networkPassphrase,
+      })
+        .addOperation(
+          contract.call("query", nativeToScVal(idHash, { type: "string" })),
+        )
+        .setTimeout(30)
+        .build();
+
+      const simulated =
+        await this.sorobanClient.simulateTransaction(transaction);
+
+      if (SorobanRpc.Api.isSimulationSuccess(simulated)) {
+        const result = simulated.result?.retval;
+        if (!result) {
+          return false;
+        }
+
+        // Parse boolean result
+        if (result.switch() === xdr.SCValType.scvTypeBool()) {
+          return result.b()?.valueOf() || false;
+        }
+
+        return false;
+      } else if (SorobanRpc.Api.isSimulationError(simulated)) {
+        console.warn(`Query contract error for ${idHash}`);
+        return false;
+      }
+
+      return false;
+    } catch (error: any) {
+      console.error(`Error querying consent for ${idHash}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Query consent status via full record (legacy method)
+   *
+   * Calls contract.get_record(donor_id_hash) without authentication
+   *
+   * @param idHash - SHA-256 hash of donor ID
+   * @returns true if active, false if not found or revoked
+   */
+  async queryConsentViaRecord(idHash: string): Promise<boolean> {
     const record = await this.getRecord(idHash);
     return record !== null && record.isActive;
   }
@@ -124,10 +184,18 @@ export class QueryService {
 
         return this.parseConsentRecord(result);
       } else if (SorobanRpc.Api.isSimulationError(simulated)) {
-        // Contract returned error (e.g., NotFound) — treat as null
+        // Contract returned error - could be NotFound, Unauthorized, etc
+        // Log for debugging but treat as "not found" for public queries
+        const error = simulated.error;
+        console.warn(`Contract error for ${idHash}: ${error}`);
+        return null;
+      } else if (SorobanRpc.Api.isSimulationRestore(simulated)) {
+        // Restore state required - archive ledger entry needs restoration
+        console.warn(`Restore operation needed for ${idHash}`);
         return null;
       } else {
-        // Simulation failed
+        // Simulation failed for unknown reason
+        console.error(`Simulation failed for ${idHash}:`, simulated);
         return null;
       }
     } catch (error: any) {
@@ -170,7 +238,9 @@ export class QueryService {
             fields.donorIdHash = val.str()?.toString() || "";
           } else if (key === "wallet") {
             const addr = val.address();
-            if (addr) {
+            if (addr?.accountId()) {
+              fields.wallet = addr.accountId()?.toString() || "";
+            } else if (addr?.contractId()) {
               fields.wallet = addr.contractId()?.toString() || "";
             }
           } else if (key === "organs") {
