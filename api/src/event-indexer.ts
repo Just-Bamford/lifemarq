@@ -1,4 +1,4 @@
-import { Env, SorobanRpc } from "@stellar/stellar-sdk";
+import { Env, SorobanRpc } from "stellar-sdk";
 import { logger } from "./middleware";
 
 /**

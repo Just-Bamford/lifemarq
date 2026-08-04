@@ -11,6 +11,16 @@
 import { Request, Response, NextFunction } from "express";
 
 /**
+ * Simple logger utility
+ */
+export const logger = {
+  info: (msg: string) => console.log(`[INFO] ${msg}`),
+  error: (msg: string) => console.error(`[ERROR] ${msg}`),
+  warn: (msg: string) => console.warn(`[WARN] ${msg}`),
+  debug: (msg: string) => console.debug(`[DEBUG] ${msg}`),
+};
+
+/**
  * Generate unique request ID for tracing
  */
 function generateRequestId(): string {

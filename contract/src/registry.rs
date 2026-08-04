@@ -293,3 +293,4 @@ impl Registry {
         let key = DataKey::Hospital(hospital_id);
         env.storage().persistent().get(&key)
     }
+}
