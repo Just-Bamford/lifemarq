@@ -398,10 +398,15 @@ impl Registry {
     /// # Arguments
     /// * `env` - Soroban environment
     /// * `minor_id_hash` - SHA-256 hash of minor's national ID (hex string, 64 chars)
+    /// * `caller` - Address of the parent or guardian approving this consent
     pub fn approve_minor_consent(
         env: &Env,
         minor_id_hash: String,
+        caller: Address,
     ) -> Result<(), ContractError> {
+        // SECURITY: Require caller signature FIRST
+        caller.require_auth();
+
         // Fetch pending record
         let mut pending = env
             .storage()
@@ -410,15 +415,11 @@ impl Registry {
             .ok_or(ContractError::NotFound)?;
 
         // Determine which wallet is calling and update its approval
-        let caller = env.invoker();
-
         if caller == pending.parent_wallet {
             // Parent is approving
-            caller.require_auth();
             pending.parent_approved = true;
         } else if caller == pending.guardian_wallet {
             // Guardian is approving
-            caller.require_auth();
             pending.guardian_approved = true;
         } else {
             // Neither parent nor guardian - unauthorized
@@ -462,7 +463,7 @@ impl Registry {
 
             // AUDITABILITY: Emit partial approval event
             env.events().publish(
-                (symbol_short!("lifemarq"), symbol_short!("minor_prtl")),
+                (symbol_short!("lifemarq"), symbol_short!("minor_prt")),
                 (minor_id_hash.clone(), caller.clone()),
             );
         }
@@ -482,3 +483,4 @@ impl Registry {
             .persistent()
             .get::<_, MinorConsentPending>(&DataKey::MinorPending(minor_id_hash))
     }
+}
