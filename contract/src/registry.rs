@@ -20,6 +20,7 @@ impl Registry {
     ///   - Caller wallet must authenticate (wallet.require_auth())
     /// Postconditions:
     ///   - ConsentRecord stored with is_active=true, current timestamp
+    ///   - expires_at set if provided (for time-limited consent)
     ///   - DonorRegistered event emitted
     /// Idempotency: Returns AlreadyRegistered on duplicate hash
     pub fn register(
@@ -27,6 +28,7 @@ impl Registry {
         donor_id_hash: String,
         wallet: Address,
         organs: Vec<String>,
+        expires_at: Option<u64>,
     ) -> Result<(), ContractError> {
         // SECURITY: Require wallet signature FIRST (before any state checks)
         wallet.require_auth();
@@ -47,6 +49,7 @@ impl Registry {
             organs,
             registered_at: env.ledger().timestamp(),
             is_active: true, // ACTIVE state
+            expires_at, // Optional expiry (None = never expires, perpetual consent)
         };
 
         // PERSISTENCE: Write to ledger (immutable once committed)
@@ -124,10 +127,12 @@ impl Registry {
     /// Returns true if:
     ///   - Record exists for donor_id_hash
     ///   - record.is_active == true
+    ///   - record.expires_at is None OR current time < expires_at
     /// 
     /// Returns false if:
     ///   - Record does not exist
     ///   - Record exists but is_active == false (revoked)
+    ///   - Record has expired (current time >= expires_at)
     /// 
     /// No events emitted (read-only query)
     pub fn query(env: &Env, donor_id_hash: String) -> bool {
@@ -136,7 +141,18 @@ impl Registry {
             .persistent()
             .get::<_, ConsentRecord>(&DataKey::Consent(donor_id_hash.clone()))
         {
-            Some(record) => record.is_active,
+            Some(record) => {
+                if !record.is_active {
+                    return false;
+                }
+                // Check expiry
+                if let Some(expires_at) = record.expires_at {
+                    if env.ledger().timestamp() >= expires_at {
+                        return false; // Expired
+                    }
+                }
+                true
+            }
             None => false,
         }
     }
@@ -435,6 +451,7 @@ impl Registry {
                 organs: pending.organs.clone(),
                 registered_at: pending.registered_at, // Preserve original registration time
                 is_active: true, // ACTIVE state - now fully consented
+                expires_at: None, // Minor consent doesn't expire by default (can be set via renew)
             };
 
             // PERSISTENCE: Remove pending record and create active consent
@@ -482,5 +499,97 @@ impl Registry {
         env.storage()
             .persistent()
             .get::<_, MinorConsentPending>(&DataKey::MinorPending(minor_id_hash))
+    }
+
+    /// Renew a donor's consent by extending the expiry date
+    /// 
+    /// Called by donor to renew expired or soon-to-expire consent.
+    /// Extends the expires_at timestamp by the renewal period.
+    /// 
+    /// Preconditions:
+    ///   - Record exists for this donor_id_hash
+    ///   - is_active == true (revoked consents cannot be renewed)
+    ///   - Caller wallet matches record.wallet (Unauthorized if mismatch)
+    ///   - Caller wallet must authenticate (wallet.require_auth())
+    /// Postconditions:
+    ///   - expires_at is extended by renewal_period seconds
+    ///   - If no previous expiry, one is set to now + renewal_period
+    ///   - ConsentRenewed event emitted
+    pub fn renew_consent(
+        env: &Env,
+        donor_id_hash: String,
+        wallet: Address,
+        renewal_period: u64,
+    ) -> Result<(), ContractError> {
+        // SECURITY: Require wallet signature
+        wallet.require_auth();
+
+        // Fetch existing record
+        let mut record = env
+            .storage()
+            .persistent()
+            .get::<_, ConsentRecord>(&DataKey::Consent(donor_id_hash.clone()))
+            .ok_or(ContractError::NotFound)?;
+
+        // Check if consent is active (revoked consents cannot be renewed)
+        if !record.is_active {
+            return Err(ContractError::AlreadyRevoked);
+        }
+
+        // AUTHORIZATION: Verify caller is original registrant
+        if record.wallet != wallet {
+            return Err(ContractError::Unauthorized);
+        }
+
+        // Extend expiry timestamp
+        let now = env.ledger().timestamp();
+        record.expires_at = Some(if let Some(previous_expiry) = record.expires_at {
+            // Extend from previous expiry if still in the future, otherwise from now
+            if previous_expiry > now {
+                previous_expiry + renewal_period
+            } else {
+                now + renewal_period
+            }
+        } else {
+            // First time expiry is set
+            now + renewal_period
+        });
+
+        // Update record
+        env.storage()
+            .persistent()
+            .set(&DataKey::Consent(donor_id_hash.clone()), &record);
+
+        // Emit renewal event
+        env.events().publish(
+            (symbol_short!("lifemarq"), symbol_short!("renew")),
+            (donor_id_hash.clone(), &wallet, record.expires_at),
+        );
+
+        Ok(())
+    }
+
+    /// Check if a consent record has expired
+    /// 
+    /// Returns true if record exists and has expired (is_active && current_time >= expires_at)
+    /// Returns false if record doesn't exist, is revoked, or hasn't expired
+    pub fn is_consent_expired(env: &Env, donor_id_hash: String) -> bool {
+        match env
+            .storage()
+            .persistent()
+            .get::<_, ConsentRecord>(&DataKey::Consent(donor_id_hash))
+        {
+            Some(record) => {
+                if !record.is_active {
+                    return false; // Revoked, not expired
+                }
+                if let Some(expires_at) = record.expires_at {
+                    env.ledger().timestamp() >= expires_at
+                } else {
+                    false // No expiry set
+                }
+            }
+            None => false,
+        }
     }
 }

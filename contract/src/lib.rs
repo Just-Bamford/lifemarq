@@ -66,6 +66,7 @@ impl LifemarqContract {
     /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
     /// * `wallet` - Donor's Stellar wallet address (must sign this call)
     /// * `organs` - List of organs to donate (e.g., ["kidney", "liver"])
+    /// * `expires_at` - Optional expiry timestamp (Unix seconds). If set, consent auto-expires and requires renewal.
     /// 
     /// # Returns
     /// * `Ok(())` if registration successful
@@ -79,8 +80,9 @@ impl LifemarqContract {
         donor_id_hash: String,
         wallet: Address,
         organs: Vec<String>,
+        expires_at: Option<u64>,
     ) -> Result<(), ContractError> {
-        Registry::register(&env, donor_id_hash, wallet, organs)
+        Registry::register(&env, donor_id_hash, wallet, organs, expires_at)
     }
 
     /// Revoke a donor's consent (only the original signer can call this)
@@ -324,6 +326,50 @@ impl LifemarqContract {
         minor_id_hash: String,
     ) -> Option<crate::types::MinorConsentPending> {
         Registry::get_pending_minor_consent(&env, minor_id_hash)
+    }
+
+    /// Renew a donor's consent by extending the expiry date ⭐ NEW
+    /// 
+    /// **Event**: Emits `lifemarq.renew` event
+    /// 
+    /// Called by donor to renew their consent for another period (typically 5 years).
+    /// If consent has expired, renewal reactivates it; if not expired, extends the deadline.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
+    /// * `wallet` - Donor's Stellar wallet address (must match original registrant)
+    /// * `renewal_period` - Number of seconds to extend consent (e.g., 157,680,000 for 5 years)
+    /// 
+    /// # Returns
+    /// * `Ok(())` if renewal successful
+    /// * `Err(NotFound)` if consent record doesn't exist
+    /// * `Err(AlreadyRevoked)` if consent has been revoked
+    /// * `Err(Unauthorized)` if wallet doesn't match original registrant
+    pub fn renew_consent(
+        env: Env,
+        donor_id_hash: String,
+        wallet: Address,
+        renewal_period: u64,
+    ) -> Result<(), ContractError> {
+        Registry::renew_consent(&env, donor_id_hash, wallet, renewal_period)
+    }
+
+    /// Check if a consent record has expired ⭐ NEW
+    /// 
+    /// Read-only query to determine if a consent has passed its expiry date.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `donor_id_hash` - SHA-256 hash of national ID (hex string, 64 chars)
+    /// 
+    /// # Returns
+    /// * `true` if record exists, is active, and has expired
+    /// * `false` if record doesn't exist, is revoked, or hasn't expired
+    /// 
+    /// Useful for UI to show "Renewal needed" status
+    pub fn is_consent_expired(env: Env, donor_id_hash: String) -> bool {
+        Registry::is_consent_expired(&env, donor_id_hash)
     }
 }
 

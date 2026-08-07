@@ -57,6 +57,10 @@ pub struct ConsentRecord {
   /// false: consent has been revoked (final state, cannot be re-activated)
   /// 1 byte boolean
   pub is_active: bool,
+  /// Optional expiry timestamp (Unix seconds). If set, consent becomes inactive after this time.
+  /// Used in jurisdictions requiring periodic reconfirmation (e.g., 5-year renewal cycles)
+  /// If None, consent never expires (perpetual)
+  pub expires_at: Option<u64>,
 }
 
 /// Represents a hospital in the Lifemarq network
@@ -200,4 +204,8 @@ pub enum ContractError {
     /// State: MinorConsentPending exists but not all required signatures collected
     /// Action: Both parent and guardian must call approve_minor_consent
     PendingApproval = 5,
+    /// Consent has expired and requires renewal
+    /// State: record.expires_at is set and current time > expires_at
+    /// Action: Donor must call renew() to reactivate consent
+    Expired = 6,
 }
