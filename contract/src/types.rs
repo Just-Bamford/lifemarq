@@ -107,6 +107,43 @@ pub struct RecipientRecord {
     pub registered_at: u64,
 }
 
+/// Represents a pending minor consent awaiting multi-sig approval
+/// 
+/// State machine for minor consent:
+/// ```
+///              register_minor(parent, guardian)
+///    ┌────────────────────────────────────────┐
+///    │                                        ▼
+/// (new) ──────────────────────────► PENDING_APPROVAL
+///                                      │
+///                                      │ approve_minor_consent(parent)
+///                                      │ approve_minor_consent(guardian)
+///                                      │
+///                                      ▼
+///                                    ACTIVE (consent finalized)
+/// ```
+/// 
+/// Both parent and guardian must call approve_minor_consent for the record to become active.
+/// This is a legal requirement in many jurisdictions for minors to register medical consent.
+#[derive(Clone)]
+#[contracttype]
+pub struct MinorConsentPending {
+    /// SHA-256 hash of minor's national ID
+    pub minor_id_hash: String,
+    /// Parent wallet address (one of two required signers)
+    pub parent_wallet: Address,
+    /// Guardian wallet address (one of two required signers)
+    pub guardian_wallet: Address,
+    /// List of organs the minor consents to donate
+    pub organs: Vec<String>,
+    /// Whether parent has approved
+    pub parent_approved: bool,
+    /// Whether guardian has approved
+    pub guardian_approved: bool,
+    /// Timestamp when registration was initiated
+    pub registered_at: u64,
+}
+
 /// Storage key for consent and recipient records
 #[derive(Clone)]
 #[contracttype]
@@ -117,6 +154,8 @@ pub enum DataKey {
     Recipient(String),
     /// Keyed by hospital_id (e.g., "hospital-001")
     Hospital(String),
+    /// Keyed by minor_id_hash (SHA-256 hex string) - pending multi-sig approval
+    MinorPending(String),
 }
 
 /// Explicit consent state for clarity in state machine transitions
@@ -137,6 +176,7 @@ pub enum ConsentState {
 /// 2. NotFound - record does not exist (query returned empty)
 /// 3. AlreadyRevoked - revocation blocked (immutability check)
 /// 4. Unauthorized - caller not authorized (security check)
+/// 5. InvalidMinorConsent - minor consent-specific errors
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[contracterror]
 pub enum ContractError {
@@ -156,4 +196,8 @@ pub enum ContractError {
     /// State: record.is_active == false
     /// Action: Revocation is permanent; re-register with new wallet if needed
     AlreadyRevoked = 4,
+    /// Minor consent: pending approval still awaiting signatures
+    /// State: MinorConsentPending exists but not all required signatures collected
+    /// Action: Both parent and guardian must call approve_minor_consent
+    PendingApproval = 5,
 }

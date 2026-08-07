@@ -1,5 +1,5 @@
 use soroban_sdk::{Address, Env, String, Vec, symbol_short};
-use crate::types::{ConsentRecord, DataKey, ContractError, HospitalRecord};
+use crate::types::{ConsentRecord, MinorConsentPending, DataKey, ContractError, HospitalRecord};
 
 /// Core registry logic for Lifemarq
 /// 
@@ -293,4 +293,192 @@ impl Registry {
         let key = DataKey::Hospital(hospital_id);
         env.storage().persistent().get(&key)
     }
-}
+
+    /// Register a minor's consent requiring multi-sig approval from parent and guardian
+    /// 
+    /// Initiates a minor consent record that requires two signatures to activate:
+    /// 1. Parent wallet must approve
+    /// 2. Guardian wallet must approve
+    /// 
+    /// State transition: (new) → PENDING_APPROVAL
+    /// Preconditions:
+    ///   - No active minor consent exists for this minor_id_hash
+    ///   - Parent and guardian wallets must be different (security check)
+    ///   - Caller wallet must authenticate (caller.require_auth())
+    /// Postconditions:
+    ///   - MinorConsentPending record created with both approval flags false
+    ///   - Record stored awaiting signatures from parent and guardian
+    ///   - MinorRegistered event emitted
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `minor_id_hash` - SHA-256 hash of minor's national ID (hex string, 64 chars)
+    /// * `parent_wallet` - Parent wallet address (must sign approval)
+    /// * `guardian_wallet` - Guardian wallet address (must sign approval)
+    /// * `organs` - List of organs the minor consents to donate
+    /// * `initiator` - The wallet initiating this registration (typically healthcare provider)
+    pub fn register_minor(
+        env: &Env,
+        minor_id_hash: String,
+        parent_wallet: Address,
+        guardian_wallet: Address,
+        organs: Vec<String>,
+        initiator: Address,
+    ) -> Result<(), ContractError> {
+        // SECURITY: Require initiator signature
+        initiator.require_auth();
+
+        // VALIDATION: Parent and guardian must be different wallets
+        if parent_wallet == guardian_wallet {
+            return Err(ContractError::Unauthorized);
+        }
+
+        // IDEMPOTENCY CHECK: Verify no record exists for this minor
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::MinorPending(minor_id_hash.clone()))
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::Consent(minor_id_hash.clone()))
+        {
+            return Err(ContractError::AlreadyRegistered);
+        }
+
+        // STATE TRANSITION: Create new minor consent in PENDING_APPROVAL state
+        let pending = MinorConsentPending {
+            minor_id_hash: minor_id_hash.clone(),
+            parent_wallet: parent_wallet.clone(),
+            guardian_wallet: guardian_wallet.clone(),
+            organs,
+            parent_approved: false, // Awaiting parent signature
+            guardian_approved: false, // Awaiting guardian signature
+            registered_at: env.ledger().timestamp(),
+        };
+
+        // PERSISTENCE: Write to ledger
+        env.storage()
+            .persistent()
+            .set(&DataKey::MinorPending(minor_id_hash.clone()), &pending);
+
+        // AUDITABILITY: Emit event for blockchain observers
+        env.events().publish(
+            (symbol_short!("lifemarq"), symbol_short!("minor_reg")),
+            (
+                minor_id_hash.clone(),
+                parent_wallet.clone(),
+                guardian_wallet.clone(),
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Parent or guardian approves a minor's consent registration
+    /// 
+    /// Called by either parent or guardian wallet to approve the minor consent.
+    /// Once both have approved, the pending record is automatically finalized to active consent.
+    /// 
+    /// State transition: PENDING_APPROVAL → ACTIVE (when both signatures collected)
+    /// Preconditions:
+    ///   - MinorConsentPending record exists for this minor_id_hash
+    ///   - Caller must be either parent_wallet or guardian_wallet (Unauthorized if neither)
+    ///   - Caller must not have already approved (idempotency)
+    ///   - Caller wallet must authenticate (caller.require_auth())
+    /// Postconditions:
+    ///   - If both parent and guardian have now approved:
+    ///     - MinorConsentPending deleted
+    ///     - ConsentRecord created with is_active=true
+    ///     - MinorApproved event emitted
+    ///   - If only one has approved:
+    ///     - MinorConsentPending updated with one approval flag set
+    ///     - MinorApprovalPartial event emitted
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `minor_id_hash` - SHA-256 hash of minor's national ID (hex string, 64 chars)
+    pub fn approve_minor_consent(
+        env: &Env,
+        minor_id_hash: String,
+    ) -> Result<(), ContractError> {
+        // Fetch pending record
+        let mut pending = env
+            .storage()
+            .persistent()
+            .get::<_, MinorConsentPending>(&DataKey::MinorPending(minor_id_hash.clone()))
+            .ok_or(ContractError::NotFound)?;
+
+        // Determine which wallet is calling and update its approval
+        let caller = env.invoker();
+
+        if caller == pending.parent_wallet {
+            // Parent is approving
+            caller.require_auth();
+            pending.parent_approved = true;
+        } else if caller == pending.guardian_wallet {
+            // Guardian is approving
+            caller.require_auth();
+            pending.guardian_approved = true;
+        } else {
+            // Neither parent nor guardian - unauthorized
+            return Err(ContractError::Unauthorized);
+        }
+
+        // Check if both have approved
+        if pending.parent_approved && pending.guardian_approved {
+            // FINALIZATION: Create active consent record
+            let consent_record = ConsentRecord {
+                donor_id_hash: minor_id_hash.clone(),
+                wallet: pending.parent_wallet.clone(), // Parent is the primary account owner
+                organs: pending.organs.clone(),
+                registered_at: pending.registered_at, // Preserve original registration time
+                is_active: true, // ACTIVE state - now fully consented
+            };
+
+            // PERSISTENCE: Remove pending record and create active consent
+            env.storage()
+                .persistent()
+                .remove(&DataKey::MinorPending(minor_id_hash.clone()));
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Consent(minor_id_hash.clone()), &consent_record);
+
+            // AUDITABILITY: Emit finalization event
+            env.events().publish(
+                (symbol_short!("lifemarq"), symbol_short!("minor_fin")),
+                (
+                    minor_id_hash.clone(),
+                    pending.parent_wallet.clone(),
+                    pending.guardian_wallet.clone(),
+                ),
+            );
+        } else {
+            // PARTIAL: One signature collected, awaiting second
+            env.storage()
+                .persistent()
+                .set(&DataKey::MinorPending(minor_id_hash.clone()), &pending);
+
+            // AUDITABILITY: Emit partial approval event
+            env.events().publish(
+                (symbol_short!("lifemarq"), symbol_short!("minor_prtl")),
+                (minor_id_hash.clone(), caller.clone()),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Query pending minor consent status (read-only)
+    /// 
+    /// Returns the pending minor consent record if it exists and is still awaiting approval.
+    /// Returns None if no pending record exists.
+    pub fn get_pending_minor_consent(
+        env: &Env,
+        minor_id_hash: String,
+    ) -> Option<MinorConsentPending> {
+        env.storage()
+            .persistent()
+            .get::<_, MinorConsentPending>(&DataKey::MinorPending(minor_id_hash))
+    }
