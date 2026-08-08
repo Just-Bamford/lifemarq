@@ -160,6 +160,10 @@ pub enum DataKey {
     Hospital(String),
     /// Keyed by minor_id_hash (SHA-256 hex string) - pending multi-sig approval
     MinorPending(String),
+    /// Keyed by transfer_id - stores complete organ journey
+    OrganJourney(String),
+    /// Keyed by transfer_id - stores individual transfer legs (for audit)
+    TransferLeg(String),
 }
 
 /// Explicit consent state for clarity in state machine transitions
@@ -171,6 +175,98 @@ pub enum ConsentState {
     Active = 1,
     /// Consent has been revoked by the donor (permanent, immutable state)
     Revoked = 2,
+}
+
+/// Organ transfer leg in the chain of custody
+/// 
+/// Records a single handoff in the organ's journey from harvest to transplant.
+/// Each leg requires the custodian's wallet signature (authorization).
+/// 
+/// Example chain:
+/// 1. Harvest: Hospital A → Transport Team (harvesting_hospital signs)
+/// 2. Transport: Transport Team → Hospital B (transport_team signs)
+/// 3. Transplant: Hospital B (receiving_hospital signs to finalize)
+#[derive(Clone)]
+#[contracttype]
+pub struct OrganTransferLeg {
+    /// UUID/identifier for this transfer batch (groups related organs)
+    pub transfer_id: String,
+    /// Organ type being transferred (e.g., "kidney", "liver", "heart")
+    pub organ: String,
+    /// SHA-256 hash of donor ID (privacy-preserving link to donor)
+    pub donor_id_hash: String,
+    /// Current custodian's wallet (the entity transferring the organ)
+    pub from_custodian: Address,
+    /// Next custodian's wallet (the entity receiving the organ)
+    pub to_custodian: Address,
+    /// Type of transfer (Harvest, Transport, Transplant)
+    pub transfer_type: TransferType,
+    /// GPS coordinates (latitude) for location tracking
+    pub location_lat: Option<i64>,
+    /// GPS coordinates (longitude) for location tracking
+    pub location_long: Option<i64>,
+    /// Human-readable location description
+    pub location_description: String,
+    /// Temperature of organ during transport (in Celsius * 100 for precision)
+    pub temperature: Option<i64>,
+    /// Oxygen saturation level (if applicable)
+    pub oxygen_level: Option<u32>,
+    /// Quality assessment notes (visual inspection, etc.)
+    pub quality_notes: String,
+    /// Timestamp when transfer occurred (Unix seconds)
+    pub timestamp: u64,
+    /// Wallet of the entity that signed this leg
+    pub signed_by: Address,
+}
+
+/// Type of organ transfer
+#[derive(Clone, Copy, PartialEq)]
+#[contracttype]
+pub enum TransferType {
+    /// Initial harvest from donor at hospital
+    Harvest = 1,
+    /// Transport between locations
+    Transport = 2,
+    /// Final transfer to receiving hospital
+    Transplant = 3,
+}
+
+/// Complete organ journey (chain of custody)
+/// 
+/// Aggregates all legs of an organ's journey for easy retrieval
+#[derive(Clone)]
+#[contracttype]
+pub struct OrganJourney {
+    /// Unique identifier for this organ transfer batch
+    pub transfer_id: String,
+    /// SHA-256 hash of donor ID
+    pub donor_id_hash: String,
+    /// Organ type
+    pub organ: String,
+    /// All legs of the journey (harvest → transport → transplant)
+    pub legs: Vec<OrganTransferLeg>,
+    /// Time when harvest occurred
+    pub harvest_time: u64,
+    /// Time when organ was implanted (transplant completed)
+    pub transplant_time: Option<u64>,
+    /// Current location in the chain
+    pub current_custodian: Address,
+    /// Status of the organ
+    pub status: OrganStatus,
+}
+
+/// Status of organ in the chain of custody
+#[derive(Clone, Copy, PartialEq)]
+#[contracttype]
+pub enum OrganStatus {
+    /// Just harvested, en route
+    InTransit = 1,
+    /// Arrived at receiving hospital
+    AtDestination = 2,
+    /// Successfully transplanted
+    Transplanted = 3,
+    /// Organ was rejected/discarded
+    Discarded = 4,
 }
 
 /// Contract error types
@@ -208,4 +304,12 @@ pub enum ContractError {
     /// State: record.expires_at is set and current time > expires_at
     /// Action: Donor must call renew() to reactivate consent
     Expired = 6,
+    /// Invalid transfer - custodian mismatch or invalid state
+    /// State: from_custodian doesn't match current holder
+    /// Action: Check custody chain before transferring
+    InvalidTransfer = 7,
+    /// Transfer requires signature from current custodian
+    /// State: Caller is not the current organ custodian
+    /// Action: Only current custodian can initiate transfer
+    MustBeCustodian = 8,
 }

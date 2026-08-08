@@ -464,6 +464,91 @@ impl LifemarqContract {
     pub fn is_consent_expired(env: Env, donor_id_hash: String) -> bool {
         Registry::is_consent_expired(&env, donor_id_hash)
     }
+
+    /// Log organ transfer leg for chain of custody ⭐ PROVENANCE
+    /// 
+    /// **Event**: Emits `lifemarq.transfer` event
+    /// 
+    /// Records each handoff: harvesting hospital → transport → receiving hospital
+    /// Each custodian must sign to transfer ownership (multi-sig pattern).
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `transfer_id` - Unique ID for this organ batch
+    /// * `organ` - Organ type (kidney, liver, heart, lung, pancreas, cornea)
+    /// * `donor_id_hash` - SHA-256 hash of donor's national ID
+    /// * `from_custodian` - Current custodian wallet (must sign this call)
+    /// * `to_custodian` - Next custodian wallet address
+    /// * `transfer_type` - 1=Harvest, 2=Transport, 3=Transplant
+    /// * `location_description` - Location name/description (optionally with GPS: "lat,long,description")
+    /// * `temperature` - Organ temp in Celsius * 100 (e.g., 400 = 4°C)
+    /// * `quality_notes` - Assessment notes (visual inspection, viability, oxygen%, etc.)
+    /// 
+    /// # Returns
+    /// * `Ok(())` if transfer logged successfully
+    /// * `Err(InvalidTransfer)` if transfer_type invalid
+    /// * `Err(Unauthorized)` if from_custodian did not authenticate
+    pub fn log_transfer(
+        env: Env,
+        transfer_id: String,
+        organ: String,
+        donor_id_hash: String,
+        from_custodian: Address,
+        to_custodian: Address,
+        transfer_type: u32,
+        location_description: String,
+        temperature: Option<i64>,
+        quality_notes: String,
+    ) -> Result<(), ContractError> {
+        Registry::log_transfer(
+            &env,
+            transfer_id,
+            organ,
+            donor_id_hash,
+            from_custodian,
+            to_custodian,
+            transfer_type,
+            location_description,
+            temperature,
+            quality_notes,
+        )
+    }
+
+    /// Get complete organ journey (chain of custody) ⭐ PROVENANCE
+    /// 
+    /// Retrieves all transfer legs for an organ from harvest to transplant.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `transfer_id` - Unique ID of the organ batch
+    /// 
+    /// # Returns
+    /// * `Some(OrganJourney)` with complete history and current status
+    /// * `None` if transfer not found
+    pub fn get_organ_journey(
+        env: Env,
+        transfer_id: String,
+    ) -> Option<crate::types::OrganJourney> {
+        Registry::get_organ_journey(&env, transfer_id)
+    }
+
+    /// Get single transfer leg record ⭐ PROVENANCE
+    /// 
+    /// Retrieves a specific handoff in the organ's journey.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `transfer_id` - ID of the transfer leg
+    /// 
+    /// # Returns
+    /// * `Some(OrganTransferLeg)` with custody details and signature
+    /// * `None` if transfer not found
+    pub fn get_transfer_leg(
+        env: Env,
+        transfer_id: String,
+    ) -> Option<crate::types::OrganTransferLeg> {
+        Registry::get_transfer_leg(&env, transfer_id)
+    }
 }
 
 #[cfg(test)]

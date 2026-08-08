@@ -592,4 +592,133 @@ impl Registry {
             None => false,
         }
     }
+
+    /// Log organ transfer leg (chain of custody)
+    /// 
+    /// Records each handoff in the organ's journey from harvest to transplant.
+    /// Each custodian must sign to transfer ownership.
+    /// 
+    /// Note: Soroban has a 10-parameter limit, so we combine location into single string
+    /// and pack quality data into notes.
+    pub fn log_transfer(
+        env: &Env,
+        transfer_id: String,
+        organ: String,
+        donor_id_hash: String,
+        from_custodian: Address,
+        to_custodian: Address,
+        transfer_type: u32,
+        location_description: String,
+        temperature: Option<i64>,
+        quality_notes: String,
+    ) -> Result<(), ContractError> {
+        // SECURITY: Require from_custodian signature
+        from_custodian.require_auth();
+
+        // Convert transfer_type u32 to enum
+        let tt = match transfer_type {
+            1 => crate::types::TransferType::Harvest,
+            2 => crate::types::TransferType::Transport,
+            3 => crate::types::TransferType::Transplant,
+            _ => return Err(ContractError::InvalidTransfer),
+        };
+
+        // Create transfer leg record
+        let leg = crate::types::OrganTransferLeg {
+            transfer_id: transfer_id.clone(),
+            organ: organ.clone(),
+            donor_id_hash: donor_id_hash.clone(),
+            from_custodian: from_custodian.clone(),
+            to_custodian: to_custodian.clone(),
+            transfer_type: tt,
+            location_lat: None, // Parse from location_description if needed
+            location_long: None,
+            location_description,
+            temperature,
+            oxygen_level: None,
+            quality_notes,
+            timestamp: env.ledger().timestamp(),
+            signed_by: from_custodian.clone(),
+        };
+
+        // Store transfer leg for audit trail
+        env.storage()
+            .persistent()
+            .set(&DataKey::TransferLeg(transfer_id.clone()), &leg);
+
+        // Update or create organ journey
+        let mut journey = env
+            .storage()
+            .persistent()
+            .get::<_, crate::types::OrganJourney>(&DataKey::OrganJourney(transfer_id.clone()))
+            .unwrap_or_else(|| crate::types::OrganJourney {
+                transfer_id: transfer_id.clone(),
+                donor_id_hash: donor_id_hash.clone(),
+                organ: organ.clone(),
+                legs: Vec::new(&env),
+                harvest_time: if tt == crate::types::TransferType::Harvest {
+                    env.ledger().timestamp()
+                } else {
+                    0
+                },
+                transplant_time: None,
+                current_custodian: to_custodian.clone(),
+                status: crate::types::OrganStatus::InTransit,
+            });
+
+        // Update journey with new leg
+        journey.legs.push_back(leg);
+        journey.current_custodian = to_custodian.clone();
+
+        // Update status based on transfer type
+        match tt {
+            crate::types::TransferType::Transplant => {
+                journey.status = crate::types::OrganStatus::Transplanted;
+                journey.transplant_time = Some(env.ledger().timestamp());
+            }
+            crate::types::TransferType::Transport => {
+                journey.status = crate::types::OrganStatus::InTransit;
+            }
+            _ => {}
+        }
+
+        // Save updated journey
+        env.storage()
+            .persistent()
+            .set(&DataKey::OrganJourney(transfer_id.clone()), &journey);
+
+        // Emit transfer event for audit trail
+        env.events().publish(
+            (symbol_short!("lifemarq"), symbol_short!("transfer")),
+            (
+                transfer_id.clone(),
+                organ.clone(),
+                donor_id_hash.clone(),
+                from_custodian.clone(),
+                to_custodian.clone(),
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Get complete organ journey (chain of custody)
+    pub fn get_organ_journey(
+        env: &Env,
+        transfer_id: String,
+    ) -> Option<crate::types::OrganJourney> {
+        env.storage()
+            .persistent()
+            .get::<_, crate::types::OrganJourney>(&DataKey::OrganJourney(transfer_id))
+    }
+
+    /// Get single transfer leg record
+    pub fn get_transfer_leg(
+        env: &Env,
+        transfer_id: String,
+    ) -> Option<crate::types::OrganTransferLeg> {
+        env.storage()
+            .persistent()
+            .get::<_, crate::types::OrganTransferLeg>(&DataKey::TransferLeg(transfer_id))
+    }
 }
