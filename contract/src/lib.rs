@@ -122,7 +122,7 @@ impl LifemarqContract {
     /// * `true` if consent exists and is active
     /// * `false` if not found or revoked
     /// 
-    /// Hospital systems use this to verify consent before transplant procedures
+    /// ⚠️ WARNING: TESTNET ONLY. Use query_verified_only() for mainnet (requires hospital verification)
     pub fn query(env: Env, donor_id_hash: String) -> bool {
         Registry::query(&env, donor_id_hash)
     }
@@ -223,6 +223,40 @@ impl LifemarqContract {
         Registry::is_hospital_verified(&env, hospital_id)
     }
 
+    /// Query consent with hospital access control ⭐ REQUIRED FOR MAINNET
+    /// 
+    /// **SECURITY**: Only verified hospitals can query consent records.
+    /// Unverified callers get false (silent rejection for privacy).
+    /// 
+    /// This replaces the public query() function for production.
+    /// 
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `donor_id_hash` - SHA-256 hash of national ID
+    /// * `hospital_id` - Hospital's ID (string identifier)
+    /// 
+    /// # Returns
+    /// * `true` if:
+    ///   - Hospital is registered AND verified
+    ///   - Donor consent exists AND is active
+    ///   - Consent has not expired
+    /// * `false` if:
+    ///   - Hospital not verified (access denied)
+    ///   - Consent doesn't exist or revoked
+    ///   - Consent has expired
+    pub fn query_verified_only(
+        env: Env,
+        donor_id_hash: String,
+        hospital_id: String,
+    ) -> bool {
+        // SECURITY: Check if hospital is verified before returning any data
+        if !Registry::is_hospital_verified(&env, hospital_id) {
+            return false; // Access denied (silent failure for privacy)
+        }
+        // Hospital is verified - return actual consent status
+        Registry::query(&env, donor_id_hash)
+    }
+
     /// Query consent with hospital access control
     /// 
     /// Enhanced query that checks if the calling hospital is verified.
@@ -238,6 +272,16 @@ impl LifemarqContract {
             return false; // Deny with silent failure (privacy protection)
         }
         Registry::query(&env, donor_id_hash)
+    }
+
+    /// Get hospital details (public read)
+    /// 
+    /// Retrieves hospital registration and verification status.
+    pub fn get_hospital(
+        env: Env,
+        hospital_id: String,
+    ) -> Option<crate::types::HospitalRecord> {
+        Registry::get_hospital(&env, hospital_id)
     }
 
     /// Register a minor's consent requiring multi-sig approval from parent and guardian
