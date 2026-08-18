@@ -1025,6 +1025,257 @@ app.delete(
 );
 
 /**
+ * POST /hospitals/register
+ * Register a new hospital
+ *
+ * Body:
+ * {
+ *   "hospital_id": "KNH-KE-001",
+ *   "wallet": "GAAAA...",
+ *   "name": "Kenyatta National Hospital",
+ *   "country": "KE",
+ *   "license_number": "LIC-123456"
+ * }
+ *
+ * Status Codes:
+ * - 200: Hospital registered (pending admin approval)
+ * - 400: Invalid parameters
+ * - 503: Contract unavailable
+ */
+app.post("/hospitals/register", async (req: Request, res: Response) => {
+  try {
+    const { hospital_id, wallet, name, country, license_number } = req.body;
+
+    // Validate required fields
+    if (!hospital_id || !wallet || !name || !country || !license_number) {
+      return res.status(400).json({
+        error:
+          "Missing required fields: hospital_id, wallet, name, country, license_number",
+      });
+    }
+
+    // Validate wallet format (Stellar address)
+    if (!wallet.startsWith("G") || wallet.length !== 56) {
+      return res.status(400).json({
+        error: "Invalid wallet address format",
+      });
+    }
+
+    // TODO: Call contract register_hospital function
+    // For now, return success response
+    res.json({
+      status: "registered",
+      hospital_id,
+      wallet,
+      name,
+      country,
+      license_number,
+      verification_status: "pending",
+      message: "Hospital registered. Awaiting admin approval.",
+      registered_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error registering hospital:", error);
+    res.status(503).json({ error: "Failed to register hospital" });
+  }
+});
+
+/**
+ * GET /hospitals/pending
+ * List pending hospital approvals (admin only)
+ *
+ * Requires: Authorization: Bearer ${ADMIN_API_KEY}
+ *
+ * Status Codes:
+ * - 200: List of pending hospitals
+ * - 401: Missing or invalid API key
+ * - 403: Insufficient permissions
+ */
+app.get("/hospitals/pending", async (req: Request, res: Response) => {
+  try {
+    // Check admin API key
+    const authHeader = req.headers.authorization;
+    const adminApiKey = process.env.ADMIN_API_KEY;
+
+    if (!authHeader || !adminApiKey) {
+      return res.status(401).json({ error: "Missing authorization" });
+    }
+
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || token !== adminApiKey) {
+      return res.status(401).json({ error: "Invalid API key" });
+    }
+
+    // TODO: Call contract list_pending function
+    // For now, return mock response
+    res.json({
+      count: 1,
+      pending: [
+        {
+          hospital_id: "KNH-KE-001",
+          wallet: "GAAAA...",
+          name: "Kenyatta National Hospital",
+          country: "KE",
+          license_number: "LIC-123456",
+          registered_at: new Date().toISOString(),
+        },
+      ],
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error fetching pending hospitals:", error);
+    res.status(503).json({ error: "Failed to fetch pending hospitals" });
+  }
+});
+
+/**
+ * POST /hospitals/:id/approve
+ * Approve a hospital registration (admin only)
+ *
+ * Requires: Authorization: Bearer ${ADMIN_API_KEY}
+ *
+ * Status Codes:
+ * - 200: Hospital approved
+ * - 401: Missing or invalid API key
+ * - 404: Hospital not found
+ * - 503: Contract unavailable
+ */
+app.post("/hospitals/:id/approve", async (req: Request, res: Response) => {
+  try {
+    // Check admin API key
+    const authHeader = req.headers.authorization;
+    const adminApiKey = process.env.ADMIN_API_KEY;
+
+    if (!authHeader || !adminApiKey) {
+      return res.status(401).json({ error: "Missing authorization" });
+    }
+
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || token !== adminApiKey) {
+      return res.status(401).json({ error: "Invalid API key" });
+    }
+
+    const { id } = req.params;
+
+    // TODO: Call contract approve_hospital function
+    // For now, return success response
+    res.json({
+      status: "approved",
+      hospital_id: id,
+      verification_status: "verified",
+      message: "Hospital approved and verified",
+      approved_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error approving hospital:", error);
+    res.status(503).json({ error: "Failed to approve hospital" });
+  }
+});
+
+/**
+ * POST /hospitals/:id/revoke
+ * Revoke a hospital's verification (admin only)
+ *
+ * Requires: Authorization: Bearer ${ADMIN_API_KEY}
+ *
+ * Status Codes:
+ * - 200: Hospital revoked
+ * - 401: Missing or invalid API key
+ * - 404: Hospital not found
+ * - 503: Contract unavailable
+ */
+app.post("/hospitals/:id/revoke", async (req: Request, res: Response) => {
+  try {
+    // Check admin API key
+    const authHeader = req.headers.authorization;
+    const adminApiKey = process.env.ADMIN_API_KEY;
+
+    if (!authHeader || !adminApiKey) {
+      return res.status(401).json({ error: "Missing authorization" });
+    }
+
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || token !== adminApiKey) {
+      return res.status(401).json({ error: "Invalid API key" });
+    }
+
+    const { id } = req.params;
+
+    // TODO: Call contract revoke_hospital function
+    // For now, return success response
+    res.json({
+      status: "revoked",
+      hospital_id: id,
+      verification_status: "revoked",
+      message: "Hospital verification revoked",
+      revoked_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error revoking hospital:", error);
+    res.status(503).json({ error: "Failed to revoke hospital" });
+  }
+});
+
+/**
+ * GET /hospitals/:id
+ * Get hospital record details
+ *
+ * Status Codes:
+ * - 200: Hospital record found
+ * - 404: Hospital not found
+ * - 503: Contract unavailable
+ */
+app.get("/hospitals/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // TODO: Call contract get_hospital function
+    // For now, return mock response
+    res.json({
+      hospital_id: id,
+      wallet: "GAAAA...",
+      name: "Kenyatta National Hospital",
+      country: "KE",
+      license_number: "LIC-123456",
+      is_verified: true,
+      registered_at: new Date().toISOString(),
+      approved_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error fetching hospital:", error);
+    res.status(503).json({ error: "Failed to fetch hospital" });
+  }
+});
+
+/**
+ * GET /hospitals/:id/verified
+ * Check if a hospital is verified
+ *
+ * Returns simple boolean verification status
+ *
+ * Status Codes:
+ * - 200: Verification status returned
+ * - 404: Hospital not found
+ * - 503: Contract unavailable
+ */
+app.get("/hospitals/:id/verified", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // TODO: Call contract is_verified function
+    // For now, return mock response
+    res.json({
+      hospital_id: id,
+      verified: true,
+      verified_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error checking hospital verification:", error);
+    res.status(503).json({ error: "Failed to check verification" });
+  }
+});
+
+/**
  * 404 handler
  */
 app.use((req: Request, res: Response) => {
@@ -1057,4 +1308,10 @@ app.listen(port, () => {
   console.log(`  GET /emergency-contact/:id_hash (list contacts)`);
   console.log(`  GET /query-history/:id_hash (query audit for donor)`);
   console.log(`  DELETE /emergency-contact/:id_hash (remove contact)`);
+  console.log(`  POST /hospitals/register (hospital registration)`);
+  console.log(`  GET /hospitals/pending (list pending approvals - admin only)`);
+  console.log(`  POST /hospitals/:id/approve (approve hospital - admin only)`);
+  console.log(`  POST /hospitals/:id/revoke (revoke hospital - admin only)`);
+  console.log(`  GET /hospitals/:id (get hospital record)`);
+  console.log(`  GET /hospitals/:id/verified (check verification status)`);
 });
