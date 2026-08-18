@@ -4,7 +4,7 @@
   "outputDirectory": "frontend/.next",
   "framework": "nextjs",
   "projectSettings": {
-    "nodeVersion": "18.x"
+    "nodeVersion": "20.x"
   },
   "env": [
     {
