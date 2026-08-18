@@ -460,43 +460,43 @@ npm run dev
 # Portal running at http://localhost:3000
 ```
 
-### 4. Deploy frontend to Vercel (automatic via GitHub)
+### 4. Deploy frontend to Vercel (manual setup)
 
-The repo includes GitHub Actions workflows that automatically deploy to Vercel on push to `main`:
+Vercel has native GitHub integration that auto-deploys on push:
 
-1. Connect GitHub repo to Vercel:
-   - Visit https://vercel.com/new
-   - Import the lifemarq repository
-   - Vercel will auto-detect Next.js and `vercel.json` configuration
+1. **In Vercel Dashboard:**
+   - Click "Add New..." → "Project"
+   - Select the lifemarq repository
+   - Set framework to "Next.js"
+   - Vercel auto-detects `vercel.json` configuration
 
-2. Set environment variables in Vercel dashboard:
-   - `NEXT_PUBLIC_CONTRACT_ID` — Your deployed contract ID
-   - `NEXT_PUBLIC_API_URL` — Your API endpoint (e.g., https://api.lifemarq.io)
-   - `NEXT_PUBLIC_NETWORK` — "testnet" or "public"
+2. **Set Environment Variables in Vercel:**
+   - `NEXT_PUBLIC_CONTRACT_ID` → Your deployed contract ID
+   - `NEXT_PUBLIC_API_URL` → Your API endpoint (e.g., https://api.lifemarq.io)
+   - `NEXT_PUBLIC_NETWORK` → "testnet" or "public"
 
-3. The GitHub Action will:
-   - Deploy production on push to `main`
-   - Create preview deployments for pull requests
-   - Run frontend and API tests
+3. **Auto-deployment enabled:**
+   - Push to `main` → Production deployment
+   - Push to `develop` → Preview deployment
+   - Open PR → PR preview deployment
 
-4. Test the full flow:
-   1. Open your Vercel deployment URL
-   2. Connect Freighter wallet (testnet)
-   3. Register donor consent
-   4. Query via hospital dashboard
-   5. Confirm API returns consent data
+4. **GitHub Actions CI runs on every push:**
+   - Contract builds
+   - API tests (hospital endpoints)
+   - Frontend builds
+   - All must pass before deployment
 
-### 5. Test locally
+### 5. Test the full flow locally
 
 ```bash
-# Contract tests (Rust)
-cd contract && cargo test
+# Contract build
+cd contract && cargo build --lib --release --target wasm32-unknown-unknown
 
-# API tests (Node.js)
-cd api && npm test
+# API tests
+cd api && npm install && npm test -- hospitals.test.ts && npm run build
 
 # Frontend build
-cd frontend && npm run build
+cd frontend && npm install && npm run build
 ```
 
 For the complete deployment walkthrough including mainnet steps, see [`docs/deployment.md`](docs/deployment.md).

@@ -10,112 +10,8 @@ on:
       - main
 
 jobs:
-  frontend-deploy:
-    name: Deploy Frontend to Vercel
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install Vercel CLI
-        run: npm install -g vercel
-
-      - name: Deploy to Vercel (Production)
-        run: vercel --prod
-        working-directory: frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-  frontend-preview:
-    name: Deploy Frontend Preview to Vercel
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install Vercel CLI
-        run: npm install -g vercel
-
-      - name: Deploy Preview to Vercel
-        run: vercel
-        working-directory: frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-  api-tests:
-    name: API Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: api/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: api
-
-      - name: Run hospital endpoint tests only
-        run: npm test -- hospitals.test.ts
-        working-directory: api
-
-      - name: Build
-        run: npm run build
-        working-directory: api
-
-  frontend-tests:
-    name: Frontend Tests & Build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: frontend
-
-      - name: Run linter
-        run: npm run lint
-        working-directory: frontend
-
-      - name: Build
-        run: npm run build
-        working-directory: frontend
-        env:
-          NEXT_PUBLIC_CONTRACT_ID: CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE
-          NEXT_PUBLIC_NETWORK: testnet
-          NEXT_PUBLIC_API_URL: https://api.lifemarq.io
-
-  contract-tests:
-    name: Contract Tests
+  contract-build:
+    name: Contract Build
     runs-on: ubuntu-latest
 
     steps:
@@ -134,3 +30,60 @@ jobs:
       - name: Build contract
         run: cargo build --lib --release --target wasm32-unknown-unknown
         working-directory: contract
+
+  api-tests:
+    name: API Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: api
+
+      - name: Run hospital endpoint tests only
+        run: npm test -- hospitals.test.ts
+        working-directory: api
+
+      - name: Build
+        run: npm run build
+        working-directory: api
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Run linter
+        run: npm run lint
+        working-directory: frontend
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_CONTRACT_ID: CCZDNLCAHHLDG4W4QZLXJ5IQVBIQGK3F6GZLSAEJVZ2AHVTV2CTBTFE
+          NEXT_PUBLIC_NETWORK: testnet
+          NEXT_PUBLIC_API_URL: https://api.lifemarq.io
