@@ -257,11 +257,15 @@ pub struct ConsentRecord {
 
 The hospital query API wraps contract interaction in a REST interface suitable for integration with existing hospital management systems.
 
-### `GET /health`
+### Health & Status
+
+#### `GET /health`
 
 Health check. Returns `200 OK` when the API and Stellar RPC connection are operational.
 
-### `GET /consent/:id_hash`
+### Consent Queries
+
+#### `GET /consent/:id_hash`
 
 Check whether a donor has active consent. Public endpoint — no authentication required.
 
@@ -276,13 +280,133 @@ Check whether a donor has active consent. Public endpoint — no authentication 
 }
 ```
 
-### `GET /consent/:id_hash/full`
+#### `GET /consent/:id_hash/full`
 
 Returns the complete `ConsentRecord`. Requires a valid `Authorization: Bearer <api_key>` header issued to a registered medical provider.
 
-### `GET /audit/queries`
+#### `GET /audit/queries`
 
 Returns a paginated audit log of all consent queries made through this API instance. Requires provider authentication.
+
+### Hospital Management (Admin Only)
+
+All endpoints require `Authorization: Bearer ${ADMIN_API_KEY}` header.
+
+#### `POST /hospitals/register`
+
+Submit a hospital for verification. Can be called by the hospital directly or by an admin on their behalf.
+
+**Request**
+
+```json
+{
+  "hospital_id": "KNH-KE-001",
+  "wallet": "GCZXL34YSKZNM4YWFZ5C45G5CVPQRUVSK7VJHQ2PF3D4GY7GSAPMVPQQ",
+  "name": "Kenyatta National Hospital",
+  "country": "KE",
+  "license_number": "LIC-123456"
+}
+```
+
+**Response (201 Created)**
+
+```json
+{
+  "status": "registered",
+  "hospital_id": "KNH-KE-001",
+  "verification_status": "pending",
+  "message": "Hospital registered. Awaiting admin approval.",
+  "registered_at": "2025-09-14T10:23:00Z"
+}
+```
+
+#### `GET /hospitals/pending`
+
+List all hospitals awaiting admin approval. **Admin only.**
+
+**Response (200 OK)**
+
+```json
+{
+  "count": 2,
+  "pending": [
+    {
+      "hospital_id": "KNH-KE-001",
+      "wallet": "GCZXL34YSKZNM4YWFZ5C45G5CVPQRUVSK7VJHQ2PF3D4GY7GSAPMVPQQ",
+      "name": "Kenyatta National Hospital",
+      "country": "KE",
+      "license_number": "LIC-123456",
+      "registered_at": "2025-09-14T10:23:00Z"
+    }
+  ],
+  "timestamp": "2025-09-14T10:30:00Z"
+}
+```
+
+#### `POST /hospitals/:id/approve`
+
+Approve a hospital's registration and verify their wallet on-chain. **Admin only.**
+
+**Response (200 OK)**
+
+```json
+{
+  "status": "approved",
+  "hospital_id": "KNH-KE-001",
+  "verification_status": "verified",
+  "message": "Hospital approved and verified",
+  "approved_at": "2025-09-14T10:35:00Z"
+}
+```
+
+#### `POST /hospitals/:id/revoke`
+
+Revoke a hospital's verification status. Unverified hospitals cannot query donor records. **Admin only.**
+
+**Response (200 OK)**
+
+```json
+{
+  "status": "revoked",
+  "hospital_id": "KNH-KE-001",
+  "verification_status": "revoked",
+  "message": "Hospital verification revoked",
+  "revoked_at": "2025-09-14T10:40:00Z"
+}
+```
+
+#### `GET /hospitals/:id`
+
+Retrieve a hospital's registration record.
+
+**Response (200 OK)**
+
+```json
+{
+  "hospital_id": "KNH-KE-001",
+  "wallet": "GCZXL34YSKZNM4YWFZ5C45G5CVPQRUVSK7VJHQ2PF3D4GY7GSAPMVPQQ",
+  "name": "Kenyatta National Hospital",
+  "country": "KE",
+  "license_number": "LIC-123456",
+  "is_verified": true,
+  "registered_at": "2025-09-14T10:23:00Z",
+  "approved_at": "2025-09-14T10:35:00Z"
+}
+```
+
+#### `GET /hospitals/:id/verified`
+
+Quick check if a hospital is verified and can query consent records.
+
+**Response (200 OK)**
+
+```json
+{
+  "hospital_id": "KNH-KE-001",
+  "verified": true,
+  "verified_at": "2025-09-14T10:35:00Z"
+}
+```
 
 ---
 
@@ -345,6 +469,95 @@ npm run dev
 6. Confirm the `GET /consent/:id_hash` API returns `consent_active: true`
 
 For the complete deployment walkthrough including mainnet steps, see [`docs/deployment.md`](docs/deployment.md).
+
+---
+
+## Hospital Onboarding & Access Control
+
+Lifemarq implements **on-chain access control** to ensure only verified medical institutions can query donor consent records. This prevents unauthorized data access while maintaining a transparent, auditable approval process.
+
+### Why Access Control?
+
+In a health registry, access is a security boundary. Any wallet can register as a donor (that's the point — individual autonomy). But only credentialed hospitals should retrieve consent data. Lifemarq enforces this at the contract level, not the API level, so the security model is cryptographic and portable across systems.
+
+### Registration Flow
+
+```
+Hospital                 API Layer               Soroban Contract          Admin
+   │                        │                          │                    │
+   │─ POST /hospitals/register ────▶│                  │                    │
+   │  {hospital_id, wallet,         │                  │                    │
+   │   name, country, license}      │                  │                    │
+   │                        │── store ────────────────▶│ (pending)           │
+   │                        │                          │                    │
+   │                        └─ return 201 pending ─────│                    │
+   │                                                    │ [approval pending] │
+   │                                                    │                    │
+   │                                                    │◀─ POST /hospitals/:id/approve ─│
+   │                                                    │   {hospital_id, admin_wallet}  │
+   │                                                    │─ approve_hospital() ──────────▶│
+   │                        [hospital now verified]    │                    │
+   │                                                    │                    │
+   │─ query_verified_only(id_hash, hospital_id) ─────▶│                    │
+   │                        │                ✓ verified│                    │
+   │◀─ returns: organs ─────│                          │                    │
+```
+
+### Registration Requirements
+
+1. **Hospital ID** — e.g., `KNH-KE-001` (country code + sequential ID)
+2. **Wallet Address** — Stellar testnet account that will sign queries
+3. **Hospital Name** — e.g., `Kenyatta National Hospital`
+4. **Country Code** — ISO 3166-1 alpha-2 (KE, NG, GH, ZA, etc.)
+5. **License Number** — Official medical license or registration number
+
+### Approval Process
+
+1. Hospital submits registration via `POST /hospitals/register`
+2. Admin reviews credentials against national health ministry records
+3. Admin calls `POST /hospitals/:id/approve` with admin API key
+4. Hospital wallet is marked as verified on-chain
+5. Subsequent `query_verified_only()` calls from that wallet return actual consent data
+
+**Until approved, queries return `false` (access denied)** — no error message, no indication that the record exists. This protects privacy: an unauthorized party cannot enumerate the registry.
+
+### Query with Hospital Verification
+
+Once verified, a hospital calls `query_verified_only()`:
+
+```rust
+pub fn query_verified_only(
+    env: Env,
+    donor_id_hash: String,    // SHA-256 of donor's national ID
+    hospital_id: String,      // e.g. "KNH-KE-001"
+) -> bool
+```
+
+The contract:
+
+1. Calls `is_hospital_verified(hospital_id)` — must return `true`
+2. If unverified, returns `false` (silent failure)
+3. If verified, returns actual consent status from the registry
+4. Emits an audit event with timestamp, hospital, and query result
+
+### Revocation
+
+Admin can revoke a hospital's verification with:
+
+```
+POST /hospitals/:id/revoke
+Authorization: Bearer ${ADMIN_API_KEY}
+```
+
+This is a permanent action — useful if a hospital's license is revoked, if there is suspected abuse, or if credentials cannot be verified.
+
+### Security Model
+
+- **On-chain enforcement** — The contract checks `is_verified()` before returning data, not the API
+- **No API keys for queries** — Hospitals sign transactions with their wallet; the wallet itself is the credential
+- **Audit trail** — Every query emits an on-chain event; ministry can retrieve full history
+- **Gradual rollout** — API can query with hospital verification check; contract enforces it at query time
+- **Cross-border ready** — Hospitals in Kenya can query donors registered in Nigeria using federated contract calls (Phase 2)
 
 ---
 
