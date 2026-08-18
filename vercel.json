@@ -1,0 +1,96 @@
+{
+  "version": 2,
+  "buildCommand": "cd frontend && npm run build",
+  "outputDirectory": "frontend/.next",
+  "framework": "nextjs",
+  "projectSettings": {
+    "nodeVersion": "18.x"
+  },
+  "env": [
+    {
+      "key": "NEXT_PUBLIC_CONTRACT_ID",
+      "value": "@CONTRACT_ID",
+      "type": "plaintext",
+      "description": "Soroban contract ID on Stellar testnet"
+    },
+    {
+      "key": "NEXT_PUBLIC_NETWORK",
+      "value": "testnet",
+      "type": "plaintext",
+      "description": "Stellar network (testnet or public)"
+    },
+    {
+      "key": "NEXT_PUBLIC_API_URL",
+      "value": "@API_URL",
+      "type": "plaintext",
+      "description": "Hospital query API base URL"
+    }
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "develop": true
+    }
+  },
+  "routes": [
+    {
+      "src": "/donor/(.*)",
+      "dest": "/donor"
+    },
+    {
+      "src": "/hospital/(.*)",
+      "dest": "/hospital"
+    },
+    {
+      "src": "/ministry/(.*)",
+      "dest": "/ministry"
+    },
+    {
+      "src": "/status/(.*)",
+      "dest": "/status/[id_hash]"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=()"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/donor",
+      "permanent": false
+    }
+  ]
+}

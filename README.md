@@ -448,10 +448,11 @@ npm run dev
 # API running at http://localhost:3001
 ```
 
-### 3. Configure and run the frontend
+### 3. Configure and run the frontend locally
 
 ```bash
 cd frontend
+cp .env.local.example .env.local
 # Set NEXT_PUBLIC_CONTRACT_ID in .env.local
 
 npm install
@@ -459,14 +460,44 @@ npm run dev
 # Portal running at http://localhost:3000
 ```
 
-### 4. Test the full flow
+### 4. Deploy frontend to Vercel (automatic via GitHub)
 
-1. Open `http://localhost:3000/donor`
-2. Connect Freighter wallet (testnet)
-3. Enter a test national ID — it will be hashed client-side
-4. Submit the registration transaction
-5. Open `http://localhost:3000/hospital` and query the same ID hash
-6. Confirm the `GET /consent/:id_hash` API returns `consent_active: true`
+The repo includes GitHub Actions workflows that automatically deploy to Vercel on push to `main`:
+
+1. Connect GitHub repo to Vercel:
+   - Visit https://vercel.com/new
+   - Import the lifemarq repository
+   - Vercel will auto-detect Next.js and `vercel.json` configuration
+
+2. Set environment variables in Vercel dashboard:
+   - `NEXT_PUBLIC_CONTRACT_ID` — Your deployed contract ID
+   - `NEXT_PUBLIC_API_URL` — Your API endpoint (e.g., https://api.lifemarq.io)
+   - `NEXT_PUBLIC_NETWORK` — "testnet" or "public"
+
+3. The GitHub Action will:
+   - Deploy production on push to `main`
+   - Create preview deployments for pull requests
+   - Run frontend and API tests
+
+4. Test the full flow:
+   1. Open your Vercel deployment URL
+   2. Connect Freighter wallet (testnet)
+   3. Register donor consent
+   4. Query via hospital dashboard
+   5. Confirm API returns consent data
+
+### 5. Test locally
+
+```bash
+# Contract tests (Rust)
+cd contract && cargo test
+
+# API tests (Node.js)
+cd api && npm test
+
+# Frontend build
+cd frontend && npm run build
+```
 
 For the complete deployment walkthrough including mainnet steps, see [`docs/deployment.md`](docs/deployment.md).
 
