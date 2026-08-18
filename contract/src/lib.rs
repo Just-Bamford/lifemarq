@@ -869,4 +869,175 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), ContractError::NotFound);
     }
+
+    // ====== Hospital Registry Tests ======
+
+    #[test]
+    fn test_register_hospital_succeeds_with_valid_inputs() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let hospital_id = String::from_slice(&env, "KNH-KE-001");
+        let wallet = Address::random(&env);
+        let name = String::from_slice(&env, "Kenyatta National Hospital");
+        let country = String::from_slice(&env, "KE");
+        let license_number = String::from_slice(&env, "LIC-123456");
+
+        // Register should succeed
+        let result = client.register_hospital(
+            &hospital_id,
+            &wallet,
+            &name,
+            &country,
+            &license_number,
+        );
+        assert!(result.is_ok());
+
+        // Hospital should exist and be unverified
+        let hospital = client.get_hospital(&hospital_id);
+        assert!(hospital.is_some());
+        let h = hospital.unwrap();
+        assert_eq!(h.hospital_id, hospital_id);
+        assert_eq!(h.wallet, wallet);
+        assert_eq!(h.name, name);
+        assert_eq!(h.country, country);
+        assert_eq!(h.license_number, license_number);
+        assert!(!h.is_verified);
+    }
+
+    #[test]
+    fn test_register_hospital_fails_on_duplicate() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let hospital_id = String::from_slice(&env, "KNH-KE-001");
+        let wallet = Address::random(&env);
+        let name = String::from_slice(&env, "Kenyatta National Hospital");
+        let country = String::from_slice(&env, "KE");
+        let license_number = String::from_slice(&env, "LIC-123456");
+
+        // First registration succeeds
+        let result1 = client.register_hospital(
+            &hospital_id,
+            &wallet,
+            &name,
+            &country,
+            &license_number,
+        );
+        assert!(result1.is_ok());
+
+        // Second registration with same ID fails
+        let result2 = client.register_hospital(
+            &hospital_id,
+            &wallet,
+            &name,
+            &country,
+            &license_number,
+        );
+        assert!(result2.is_err());
+        assert_eq!(result2.unwrap_err(), ContractError::AlreadyRegistered);
+    }
+
+    #[test]
+    fn test_is_verified_returns_false_before_approval() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let hospital_id = String::from_slice(&env, "KNH-KE-001");
+        let wallet = Address::random(&env);
+        let name = String::from_slice(&env, "Kenyatta National Hospital");
+        let country = String::from_slice(&env, "KE");
+        let license_number = String::from_slice(&env, "LIC-123456");
+
+        // Register hospital
+        client.register_hospital(&hospital_id, &wallet, &name, &country, &license_number).ok();
+
+        // Should not be verified yet
+        let verified = client.is_hospital_verified(&hospital_id);
+        assert!(!verified);
+    }
+
+    #[test]
+    fn test_is_verified_returns_true_after_approval() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let hospital_id = String::from_slice(&env, "KNH-KE-001");
+        let wallet = Address::random(&env);
+        let admin = Address::random(&env);
+        let name = String::from_slice(&env, "Kenyatta National Hospital");
+        let country = String::from_slice(&env, "KE");
+        let license_number = String::from_slice(&env, "LIC-123456");
+
+        // Register hospital
+        client.register_hospital(&hospital_id, &wallet, &name, &country, &license_number).ok();
+
+        // Approve as admin
+        let result = client.approve_hospital(&hospital_id, &admin);
+        assert!(result.is_ok());
+
+        // Should now be verified
+        let verified = client.is_hospital_verified(&hospital_id);
+        assert!(verified);
+    }
+
+    #[test]
+    fn test_is_verified_returns_false_after_revocation() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let hospital_id = String::from_slice(&env, "KNH-KE-001");
+        let wallet = Address::random(&env);
+        let admin = Address::random(&env);
+        let name = String::from_slice(&env, "Kenyatta National Hospital");
+        let country = String::from_slice(&env, "KE");
+        let license_number = String::from_slice(&env, "LIC-123456");
+
+        // Register and approve
+        client.register_hospital(&hospital_id, &wallet, &name, &country, &license_number).ok();
+        client.approve_hospital(&hospital_id, &admin).ok();
+
+        // Verify it's approved
+        assert!(client.is_hospital_verified(&hospital_id));
+
+        // Revoke
+        let result = client.revoke_hospital(&hospital_id, &admin);
+        assert!(result.is_ok());
+
+        // Should no longer be verified
+        let verified = client.is_hospital_verified(&hospital_id);
+        assert!(!verified);
+    }
+
+    #[test]
+    fn test_query_returns_unauthorized_for_unverified_hospital() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, LifemarqContract);
+        let client = LifemarqContractClient::new(&env, &contract_id);
+
+        let donor_wallet = Address::random(&env);
+        let hospital_id = String::from_slice(&env, "KNH-KE-001");
+        let hospital_wallet = Address::random(&env);
+        let donor_id_hash = String::from_slice(&env, "a3f8d2c1e9b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7a2c5d8e1b4f7");
+        let organs = soroban_sdk::vec![&env, String::from_slice(&env, "kidney")];
+
+        // Register donor
+        client.register(&donor_id_hash, &donor_wallet, &organs).ok();
+
+        // Register but don't approve hospital
+        let hospital_name = String::from_slice(&env, "Test Hospital");
+        let country = String::from_slice(&env, "KE");
+        let license = String::from_slice(&env, "LIC-123");
+        client.register_hospital(&hospital_id, &hospital_wallet, &hospital_name, &country, &license).ok();
+
+        // Query with unverified hospital should fail
+        let result = client.query_verified_only(&donor_id_hash, &hospital_id);
+        assert!(!result); // Returns false for unverified
+    }
 }
+
